@@ -1,0 +1,25 @@
+version: "3.8"
+
+services:
+  kripto-app:
+    build: .
+    container_name: kripto-app
+    restart: unless-stopped
+    ports:
+      - "3005:3005" # Expose the Next.js port
+    volumes:
+      - ./data:/app/data # Mount the data directory to persist SQLite DB
+    environment:
+      - NODE_ENV=production
+      - PORT=3005
+      # Add any other required environment variables here
+      # - GEMINI_API_KEY=your_key
+      # - BINANCE_API_KEY=your_key
+      # - TELEGRAM_BOT_TOKEN=your_token
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kripto.rule=Host(`kripto.behbudlu.com`)"
+      - "traefik.http.routers.kripto.entrypoints=websecure"
+      - "traefik.http.routers.kripto.tls.certresolver=letsencrypt"
+      - "traefik.http.services.kripto.loadbalancer.server.port=3005"

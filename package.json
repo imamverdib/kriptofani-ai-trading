@@ -1,0 +1,41 @@
+{
+  "name": "kriptofani-ai-trading-platform",
+  "version": "1.0.0",
+  "description": "Autonomous AI-Powered Algorithmic Crypto Trading & Analytics Platform (Google Gemini + Binance Spot/Futures + Telegram Signals) by Imamverdi Behbudlu",
+  "author": "Imamverdi Behbudlu <behbudlu.imamverdi@gmail.com> (https://behbudlu.com)",
+  "license": "MIT",
+  "scripts": {
+    "dev": "concurrently \"next dev -p 3005\" \"npm run worker\"",
+    "build": "next build",
+    "start": "next start -p 3005",
+    "lint": "eslint",
+    "worker": "tsx scripts/worker.ts"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.4.2",
+    "jose": "^6.2.3",
+    "lucide-react": "^1.17.0",
+    "next": "16.2.6",
+    "node-cron": "^4.2.1",
+    "node-fetch": "^3.3.2",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^6.0.1",
+    "technicalindicators": "^3.1.0",
+    "tsx": "^4.22.3"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20",
+    "@types/node-cron": "^3.0.11",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "concurrently": "^10.0.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.6",
+    "typescript": "^5"
+  }
+}

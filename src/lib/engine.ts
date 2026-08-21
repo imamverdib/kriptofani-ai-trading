@@ -1,0 +1,267 @@
+import crypto from 'crypto';
+import { dbRun, dbGet, dbAll } from './db';
+import { GoogleGenerativeAI, Schema, SchemaType } from '@google/generative-ai';
+import fetch from 'node-fetch';
+import { decrypt } from './encryption';
+import { getExchangeInfo, formatQuantity, formatPrice, placeMarketOrder, placeOCOOrder } from './binance';
+import { rsi, sma } from 'technicalindicators';
+import { sendMessageToUser } from './telegram';
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+
+// No hardcoded COINS array anymore
+
+function signBinanceRequest(queryString: string, apiSecret: string) {
+  return crypto.createHmac('sha256', apiSecret).update(queryString).digest('hex');
+}
+
+async function getBinanceBalances(apiKey: string, apiSecret: string) {
+  const timestamp = Date.now();
+  const recvWindow = 5000;
+  const queryString = `recvWindow=${recvWindow}&timestamp=${timestamp}`;
+  const signature = signBinanceRequest(queryString, apiSecret);
+  
+  const url = `https://api.binance.com/api/v3/account?${queryString}&signature=${signature}`;
+  
+  const res = await fetch(url, { headers: { 'X-MBX-APIKEY': apiKey } });
+  if (!res.ok) throw new Error(`Binance API error: ${await res.text()}`);
+  
+  const data: any = await res.json();
+  return data.balances;
+}
+
+// Fetch Klines (Candlestick data) for indicators
+async function getKlines(symbol: string) {
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1h&limit=50`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const data: any = await res.json();
+  return data.map((k: any) => ({
+    close: parseFloat(k[4])
+  }));
+}
+
+async function getTopVolumeCoins(): Promise<string[]> {
+  try {
+    const res = await fetch('https://api.binance.com/api/v3/ticker/24hr');
+    const data: any = await res.json();
+    const usdtPairs = data.filter((t: any) => t.symbol.endsWith('USDT'));
+    usdtPairs.sort((a: any, b: any) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume));
+    return usdtPairs.slice(0, 5).map((t: any) => t.symbol);
+  } catch (err) {
+    console.error('Failed to fetch top volume coins', err);
+    return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT']; // fallback
+  }
+}
+
+// Gemini Structured Output Schema
+const decisionSchema: Schema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    action: { type: SchemaType.STRING },
+    confidence: { type: SchemaType.INTEGER },
+    reason_summary: { type: SchemaType.STRING },
+    risk_plan: {
+      type: SchemaType.OBJECT,
+      properties: {
+        position_size_usd: { type: SchemaType.NUMBER },
+        stop_loss_price: { type: SchemaType.NUMBER },
+        take_profit_price: { type: SchemaType.NUMBER }
+      },
+      required: ['position_size_usd', 'stop_loss_price', 'take_profit_price']
+    }
+  },
+  required: ['action', 'confidence', 'reason_summary', 'risk_plan']
+};
+
+export async function runTradingEngine(targetUserId?: number) {
+  let users: any[];
+  if (targetUserId) {
+    users = await dbAll<any>('SELECT * FROM users WHERE id = ? AND binance_api_key IS NOT NULL AND binance_api_secret IS NOT NULL', [targetUserId]);
+  } else {
+    users = await dbAll<any>('SELECT * FROM users WHERE is_active = 1 AND binance_api_key IS NOT NULL AND binance_api_secret IS NOT NULL');
+  }
+  
+  for (const user of users) {
+    try {
+      const apiKey = decrypt(user.binance_api_key);
+      const apiSecret = decrypt(user.binance_api_secret);
+      
+      if (!apiKey || !apiSecret) {
+        console.error(`Decryption failed for user ${user.username}`);
+        continue;
+      }
+
+      const riskConfig = await dbGet<any>('SELECT * FROM risk_configs WHERE user_id = ?', [user.id]);
+      const balances = await getBinanceBalances(apiKey, apiSecret);
+      
+      let availableUsdt = 0;
+      const usdtBal = balances.find((b: any) => b.asset === 'USDT');
+      if (usdtBal) availableUsdt = parseFloat(usdtBal.free);
+
+      // Determine target coins
+      let targetSymbols: string[] = [];
+      const userTargetConfig = riskConfig?.target_coins || 'AUTO';
+      if (userTargetConfig === 'AUTO') {
+        targetSymbols = await getTopVolumeCoins();
+      } else {
+        targetSymbols = userTargetConfig.split(',');
+      }
+
+      let hourlyHoldSummaries: string[] = [];
+      for (const symbol of targetSymbols) {
+        try {
+          const coin = { symbol };
+          const coinBal = balances.find((b: any) => b.asset === symbol.replace('USDT', ''));
+          const sellableAssetBalance = coinBal ? parseFloat(coinBal.free) : 0;
+
+          // Technical indicators
+          const klines = await getKlines(coin.symbol);
+          if (!klines) continue;
+          
+          const closes = klines.map((k: any) => k.close);
+          const currentPrice = closes[closes.length - 1];
+          const rsiValues = rsi({ period: 14, values: closes });
+          const smaValues = sma({ period: 20, values: closes });
+          const currentRSI = rsiValues[rsiValues.length - 1];
+          const currentSMA = smaValues[smaValues.length - 1];
+
+          // ──── PRE-FILTER: Skip AI call when no actionable signal ────
+          // RSI neutral zone (35-65) + price near SMA (±2%) = no trade opportunity
+          const priceNearSMA = Math.abs(currentPrice - currentSMA) / currentSMA < 0.02;
+          const rsiNeutral = currentRSI > 35 && currentRSI < 65;
+          
+          if (rsiNeutral && priceNearSMA && sellableAssetBalance === 0) {
+            console.log(`[${coin.symbol}] Pre-filter: RSI(${currentRSI.toFixed(1)}) neutral + price near SMA → AI çağırışı atlandı`);
+            hourlyHoldSummaries.push(`*${coin.symbol}*: RSI (${currentRSI.toFixed(1)}) neytral zonadadır, siqnal yoxdur`);
+            continue;
+          }
+
+          const prompt = `
+            System: You are an autonomous quantitative crypto trader.
+            Data for ${coin.symbol}:
+            - Current Price: ${currentPrice}
+            - RSI (14h): ${currentRSI.toFixed(2)}
+            - SMA (20h): ${currentSMA.toFixed(2)}
+            
+            Portfolio:
+            - Available USDT: ${availableUsdt}
+            - Sellable Asset (${coin.symbol.replace('USDT', '')}): ${sellableAssetBalance}
+            - Max Risk Pct: ${riskConfig?.max_risk_pct || 2}%
+            
+            Decision Logic:
+            - Provide highly logical BUY or SELL decisions if an opportunity exists (RSI overbought/oversold, SMA crosses, etc). Otherwise HOLD.
+            - If BUY, suggest position_size_usd, stop_loss_price, and take_profit_price.
+          `;
+
+          const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.5-flash",
+            generationConfig: {
+              responseMimeType: "application/json",
+              responseSchema: decisionSchema,
+            }
+          });
+          
+          const result = await model.generateContent(prompt);
+          const decision = JSON.parse(result.response.text());
+          console.log(`[${coin.symbol}] AI Decision:`, decision);
+
+          const action = decision.action;
+          const confidence = decision.confidence || 0;
+          const minConf = riskConfig?.min_confidence || 75;
+
+          if ((action === 'BUY' || action === 'SELL') && confidence >= minConf) {
+            
+            // Riyazi Blokada (Math Blockade)
+            if (action === 'BUY' && currentRSI > 70) {
+              await sendMessageToUser(user.id, user.telegram_chat_id, `⚠️ *Riyazi Blokada*\nSüni Zəka ${coin.symbol} üçün BUY qərarı verdi, lakin RSI (${currentRSI.toFixed(2)}) həddən artıq yüksək olduğu üçün qərar ləğv edildi.`);
+              continue;
+            }
+            if (action === 'SELL' && currentRSI < 30) {
+              await sendMessageToUser(user.id, user.telegram_chat_id, `⚠️ *Riyazi Blokada*\nSüni Zəka ${coin.symbol} üçün SELL qərarı verdi, lakin RSI (${currentRSI.toFixed(2)}) həddən artıq aşağı olduğu üçün qərar ləğv edildi.`);
+              continue;
+            }
+
+            // Validate via Exchange Info
+            const exchangeInfo = await getExchangeInfo(coin.symbol);
+            const lotFilter = exchangeInfo.filters.find((f: any) => f.filterType === 'LOT_SIZE');
+            const priceFilter = exchangeInfo.filters.find((f: any) => f.filterType === 'PRICE_FILTER');
+            
+            let quantity = 0;
+            const maxAllowedRiskUsd = availableUsdt * ((riskConfig?.max_risk_pct || 2) / 100);
+
+            if (action === 'BUY') {
+               const requestedSizeUsd = decision.risk_plan.position_size_usd || 0;
+               const finalSizeUsd = Math.min(requestedSizeUsd, maxAllowedRiskUsd);
+               
+               if (finalSizeUsd < 10) {
+                 await sendMessageToUser(user.id, user.telegram_chat_id, `⚠️ *Limit Xətası*\n${coin.symbol} alış məbləği ($${finalSizeUsd.toFixed(2)}) Binance-in minimum $10 limitindən az olduğu üçün əməliyyat ləğv edildi.`);
+                 continue;
+               }
+               quantity = finalSizeUsd / currentPrice;
+            } else {
+               quantity = sellableAssetBalance; // Sell all logic for MVP
+               const sellValueUsd = quantity * currentPrice;
+
+               if (sellValueUsd < 10 && sellValueUsd > 0) {
+                 await sendMessageToUser(user.id, user.telegram_chat_id, `⚠️ *Limit Xətası*\n${coin.symbol} satış məbləği ($${sellValueUsd.toFixed(2)}) Binance-in minimum $10 limitindən az olduğu üçün ləğv edildi.`);
+                 continue;
+               }
+            }
+            
+            quantity = formatQuantity(quantity, parseFloat(lotFilter.stepSize));
+            const tpPrice = formatPrice(decision.risk_plan.take_profit_price, parseFloat(priceFilter.tickSize));
+            const slTrigger = formatPrice(decision.risk_plan.stop_loss_price, parseFloat(priceFilter.tickSize));
+            const slLimit = formatPrice(slTrigger * 0.998, parseFloat(priceFilter.tickSize));
+
+            if (quantity >= parseFloat(lotFilter.minQty)) {
+              let profit = 0;
+              if (action === 'SELL') {
+                 const lastBuy = await dbGet<any>('SELECT price FROM trades WHERE user_id = ? AND symbol = ? AND action = "BUY" ORDER BY created_at DESC LIMIT 1', [user.id, coin.symbol]);
+                 if (lastBuy) {
+                   profit = (currentPrice - lastBuy.price) * quantity;
+                 }
+              }
+              
+              // 1. Place Market Entry Order
+              const entryOrder = await placeMarketOrder(apiKey, apiSecret, coin.symbol, action, quantity);
+              
+              // 2. Place OCO Order
+              try {
+                await placeOCOOrder(apiKey, apiSecret, coin.symbol, action, quantity, tpPrice, slTrigger, slLimit);
+              } catch (ocoErr: any) {
+                console.error('OCO placement failed:', ocoErr);
+                await sendMessageToUser(user.id, user.telegram_chat_id, `⚠️ OCO yerləşdirmə xətası: ${ocoErr.message}`);
+              }
+
+              const dedupeKey = `trade_${coin.symbol}_${action}_${Date.now()}`;
+              await dbRun(
+                'INSERT INTO trades (user_id, symbol, action, price, amount, status, dedupe_key, profit) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [user.id, coin.symbol, action, currentPrice, quantity, 'EXECUTED', dedupeKey, profit]
+              );
+
+              await sendMessageToUser(user.id, user.telegram_chat_id, 
+                `✅ *Avtomatik Ticarət*\n\nNöv: ${action}\nKoin: ${coin.symbol}\nMiqdar: ${quantity}\nQiymət: ${currentPrice}\n\nQərar səbəbi: ${decision.reason_summary}`
+              );
+            }
+          } else {
+            if (targetUserId) {
+              await sendMessageToUser(user.id, user.telegram_chat_id, `ℹ️ *Analiz Nəticəsi*\nKoin: ${coin.symbol}\nQərar: Gözləmə (HOLD)\nSəbəb: ${decision.reason_summary}`);
+            } else {
+              hourlyHoldSummaries.push(`*${coin.symbol}*: ${decision.reason_summary}`);
+            }
+          }
+        } catch (coinErr: any) {
+           console.error(`Error processing coin ${symbol} for user ${user.username}:`, coinErr);
+        }
+      }
+
+      if (!targetUserId && hourlyHoldSummaries.length > 0) {
+        await sendMessageToUser(user.id, user.telegram_chat_id, `ℹ️ *Saatlıq Analiz Nəticəsi (HOLD)*\n\nHazırda heç bir koin üçün əlverişli ticarət fürsəti tapılmadı:\n\n${hourlyHoldSummaries.join('\n')}`);
+      }
+    } catch (err: any) {
+      console.error(`Error processing user ${user.username}:`, err);
+    }
+  }
+}

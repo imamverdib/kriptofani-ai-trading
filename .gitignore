@@ -1,0 +1,30 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# Next.js build
+/.next/
+/out/
+/build
+
+# Environment variables and databases
+.env*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+
+# Credentials & scripts
+*.pem
+*.key
+.vps_connect.sh
+debug-*.ts
+test-*.ts
+
+# OS & Logs
+.DS_Store
+*.log*
+.vercel
+*.tsbuildinfo
+next-env.d.ts
