@@ -1,3 +1,13 @@
+---
+title: KriptoFani AI Crypto Trading Platform
+emoji: ⚡
+colorFrom: indigo
+colorTo: purple
+sdk: static
+pinned: false
+license: mit
+---
+
 # 🌐 KriptoFani — Autonomous AI Crypto Trading & Analytics Platform
 
 > **Architected by [Imamverdi Behbudlu](https://behbudlu.com)** — *AI Specialist, Storyteller & Researcher. Founder of [MAINSET Community](https://behbudlu.com) & [Behbudlu Academy](https://behbudluacademy.com).*

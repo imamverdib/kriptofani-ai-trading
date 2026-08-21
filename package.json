@@ -5,9 +5,9 @@
   "author": "Imamverdi Behbudlu <behbudlu.imamverdi@gmail.com> (https://behbudlu.com)",
   "license": "MIT",
   "scripts": {
-    "dev": "concurrently \"next dev -p 3005\" \"npm run worker\"",
+    "dev": "concurrently \"next dev -p 7860\" \"npm run worker\"",
     "build": "next build",
-    "start": "next start -p 3005",
+    "start": "next start -p 7860",
     "lint": "eslint",
     "worker": "tsx scripts/worker.ts"
   },

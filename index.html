@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KriptoFani — Autonomous AI Crypto Trading & Analytics Platform</title>
+  <meta name="description" content="Enterprise Algorithmic Trading Platform powered by Google Gemini AI & Binance Spot/Futures API by Imamverdi Behbudlu." />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>" />
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #07090e;
+      --bg-card: rgba(16, 22, 34, 0.75);
+      --border-glass: rgba(255, 255, 255, 0.08);
+      --accent-primary: #6366f1;
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-rose: #f43f5e;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --font-main: 'Plus Jakarta Sans', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.12) 0px, transparent 50%),
+        radial-gradient(at 50% 50%, rgba(16, 185, 129, 0.05) 0px, transparent 50%);
+      color: var(--text-main);
+      font-family: var(--font-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.6;
+    }
+
+    header {
+      padding: 20px 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-glass);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(7, 9, 14, 0.85);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-main);
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #6366f1, #06b6d4);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+    }
+
+    .brand-title {
+      font-weight: 800;
+      font-size: 1.3rem;
+      letter-spacing: -0.5px;
+      background: linear-gradient(to right, #fff, #94a3b8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      text-decoration: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--border-glass);
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .hero {
+      padding: 60px 20px 40px;
+      text-align: center;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      background: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      border-radius: 9999px;
+      color: #a5b4fc;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      font-size: clamp(2.5rem, 5vw, 3.8rem);
+      font-weight: 900;
+      line-height: 1.15;
+      margin-bottom: 20px;
+      letter-spacing: -1px;
+    }
+
+    .hero h1 span {
+      background: linear-gradient(135deg, #6366f1, #06b6d4);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      max-width: 700px;
+      margin: 0 auto 36px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px 60px;
+      width: 100%;
+    }
+
+    .glass-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-glass);
+      border-radius: 20px;
+      backdrop-filter: blur(16px);
+      padding: 32px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+      margin-bottom: 40px;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-glass);
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Simulator Grid */
+    .sim-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+    }
+
+    @media (max-width: 850px) {
+      .sim-grid { grid-template-columns: 1fr; }
+      header { padding: 15px 20px; }
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .form-control, select {
+      width: 100%;
+      padding: 12px 16px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--border-glass);
+      border-radius: 10px;
+      color: #fff;
+      font-size: 0.95rem;
+      font-family: inherit;
+    }
+
+    .form-control:focus, select:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+    }
+
+    input[type=range] {
+      width: 100%;
+      accent-color: var(--accent-primary);
+    }
+
+    /* Terminal Output */
+    .terminal {
+      background: #020408;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 14px;
+      padding: 20px;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: #38bdf8;
+      height: 380px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .terminal-line {
+      display: flex;
+      gap: 8px;
+      word-break: break-all;
+    }
+
+    .t-time { color: #64748b; }
+    .t-success { color: #34d399; }
+    .t-warn { color: #fbbf24; }
+    .t-info { color: #818cf8; }
+
+    /* Features Grid */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+      margin-top: 20px;
+    }
+
+    .feature-box {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-glass);
+      border-radius: 16px;
+      padding: 24px;
+      transition: all 0.2s ease;
+    }
+
+    .feature-box:hover {
+      background: rgba(255, 255, 255, 0.04);
+      transform: translateY(-3px);
+      border-color: rgba(99, 102, 241, 0.3);
+    }
+
+    .feature-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: rgba(99, 102, 241, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      margin-bottom: 16px;
+      color: var(--accent-primary);
+    }
+
+    footer {
+      margin-top: auto;
+      border-top: 1px solid var(--border-glass);
+      padding: 30px 20px;
+      text-align: center;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      background: rgba(7, 9, 14, 0.95);
+    }
+
+    footer a {
+      color: var(--accent-cyan);
+      text-decoration: none;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <a href="#" class="brand">
+      <div class="brand-icon">⚡</div>
+      <div>
+        <div class="brand-title">KriptoFani</div>
+      </div>
+    </a>
+    <div class="nav-actions">
+      <a href="https://github.com/imamverdib/kriptofani-ai-trading" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+        ⭐ View on GitHub
+      </a>
+      <a href="https://behbudlu.com" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
+        Architect Profile
+      </a>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="badge">
+      <span>🤖</span> Autonomous Gemini AI + Binance API Engine
+    </div>
+    <h1>Algorithmic Trading with <span>AI Multi-Agent Precision</span></h1>
+    <p>
+      An open-source, non-custodial crypto trading platform combining real-time technical indicators (RSI, MACD, EMA) with Google Gemini AI sentiment and confidence scoring.
+    </p>
+    <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+      <a href="https://github.com/imamverdib/kriptofani-ai-trading" target="_blank" class="btn btn-primary" style="padding: 14px 28px; font-size: 1rem;">
+        📂 Clone Repository
+      </a>
+      <a href="#simulator" class="btn btn-secondary" style="padding: 14px 28px; font-size: 1rem;">
+        🧪 Launch Live AI Lab
+      </a>
+    </div>
+  </div>
+
+  <div class="container" id="simulator">
+    <div class="glass-card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>⚡</span> Live AI Decision & Trading Simulator
+        </div>
+        <span style="font-size: 0.85rem; color: var(--accent-emerald); font-weight: 600;">● Engine Ready</span>
+      </div>
+
+      <div class="sim-grid">
+        <!-- Controls Column -->
+        <div>
+          <div class="form-group">
+            <label class="form-label">Select Trading Pair</label>
+            <select id="pairSelect">
+              <option value="BTCUSDT">BTC/USDT (Bitcoin)</option>
+              <option value="ETHUSDT">ETH/USDT (Ethereum)</option>
+              <option value="SOLUSDT">SOL/USDT (Solana)</option>
+              <option value="BNBUSDT">BNB/USDT (Binance Coin)</option>
+              <option value="AVAXUSDT">AVAX/USDT (Avalanche)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <div class="form-label">
+              <span>Google Gemini AI Min Confidence</span>
+              <span id="confVal" style="color: var(--accent-cyan); font-weight: 700;">75%</span>
+            </div>
+            <input type="range" id="confSlider" min="50" max="95" value="75" oninput="document.getElementById('confVal').innerText = this.value + '%'">
+          </div>
+
+          <div class="form-group">
+            <div class="form-label">
+              <span>Risk Allocation Per Trade</span>
+              <span id="riskVal" style="color: var(--accent-emerald); font-weight: 700;">2.5%</span>
+            </div>
+            <input type="range" id="riskSlider" min="0.5" max="10" step="0.5" value="2.5" oninput="document.getElementById('riskVal').innerText = this.value + '%'">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Simulated Spot Balance (USDT)</label>
+            <input type="number" id="balanceInput" class="form-control" value="5000">
+          </div>
+
+          <button id="runSimBtn" onclick="runSimulation()" class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 1rem; justify-content: center;">
+            🚀 Run AI Market Scan & Strategy Test
+          </button>
+        </div>
+
+        <!-- Terminal Output Column -->
+        <div>
+          <div class="form-label">
+            <span>Execution Logs & Signal Output</span>
+            <span style="font-family: var(--font-mono); font-size: 0.8rem; color: #64748b;">STDOUT</span>
+          </div>
+          <div class="terminal" id="termOutput">
+            <div class="terminal-line"><span class="t-time">[00:00:00]</span> <span class="t-info">KriptoFani AI Autonomous Engine initialized.</span></div>
+            <div class="terminal-line"><span class="t-time">[00:00:01]</span> <span class="t-info">Connected to Binance REST Spot & Futures API.</span></div>
+            <div class="terminal-line"><span class="t-time">[00:00:02]</span> <span class="t-info">Google Gemini Multi-Modal Model loaded.</span></div>
+            <div class="terminal-line"><span class="t-time">[00:00:03]</span> <span class="t-success">Waiting for user trigger...</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Features Section -->
+    <div style="margin-top: 50px;">
+      <h2 style="font-size: 1.8rem; font-weight: 800; margin-bottom: 24px; text-align: center;">Platform Engineering Highlights</h2>
+      <div class="features-grid">
+        <div class="feature-box">
+          <div class="feature-icon">🛡️</div>
+          <h3 style="font-size: 1.15rem; margin-bottom: 8px;">Non-Custodial Security</h3>
+          <p style="color: var(--text-muted); font-size: 0.9rem;">Operates strictly with spot and margin order permissions. API secrets are encrypted using AES-256 at rest.</p>
+        </div>
+
+        <div class="feature-box">
+          <div class="feature-icon">🧠</div>
+          <h3 style="font-size: 1.15rem; margin-bottom: 8px;">Gemini AI Confidence Logic</h3>
+          <p style="color: var(--text-muted); font-size: 0.9rem;">Multi-factor verification analyzing technical indicator divergence (RSI/MACD) before placing algorithmic orders.</p>
+        </div>
+
+        <div class="feature-box">
+          <div class="feature-icon">📱</div>
+          <h3 style="font-size: 1.15rem; margin-bottom: 8px;">Telegram Signal Webhook</h3>
+          <p style="color: var(--text-muted); font-size: 0.9rem;">Instant push notifications detailing entry prices, take-profit triggers, and trailing stop-loss adjustments.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p>
+      © 2026 KriptoFani. Architected & Maintained by <a href="https://behbudlu.com" target="_blank" rel="noopener noreferrer">Imamverdi Behbudlu</a>. Distributed under <a href="https://github.com/imamverdib/kriptofani-ai-trading/blob/main/LICENSE" target="_blank">MIT License</a>.
+    </p>
+  </footer>
+
+  <script>
+    function log(text, type = 'info') {
+      const term = document.getElementById('termOutput');
+      const now = new Date().toTimeString().split(' ')[0];
+      const div = document.createElement('div');
+      div.className = 'terminal-line';
+      let typeClass = 't-info';
+      if (type === 'success') typeClass = 't-success';
+      if (type === 'warn') typeClass = 't-warn';
+      div.innerHTML = `<span class="t-time">[${now}]</span> <span class="${typeClass}">${text}</span>`;
+      term.appendChild(div);
+      term.scrollTop = term.scrollHeight;
+    }
+
+    async function runSimulation() {
+      const btn = document.getElementById('runSimBtn');
+      btn.disabled = true;
+      btn.innerText = 'Analyzing Market Stream...';
+
+      const pair = document.getElementById('pairSelect').value;
+      const minConf = parseInt(document.getElementById('confSlider').value);
+      const riskPct = parseFloat(document.getElementById('riskSlider').value);
+      const balance = parseFloat(document.getElementById('balanceInput').value) || 1000;
+
+      log(`[SCAN START] Ingesting 1h/4h K-lines for ${pair} from Binance...`, 'info');
+      await new Promise(r => setTimeout(r, 600));
+
+      const mockRsi = (Math.random() * 40 + 25).toFixed(1);
+      const mockMacd = (Math.random() * 2 - 1).toFixed(3);
+      log(`Calculated Indicators -> RSI: ${mockRsi} | MACD Histogram: ${mockMacd}`, 'info');
+      await new Promise(r => setTimeout(r, 600));
+
+      log(`Dispatching prompt to Google Gemini AI Engine...`, 'info');
+      await new Promise(r => setTimeout(r, 800));
+
+      const aiConfidence = Math.floor(Math.random() * 30) + 65; // 65-95%
+      const action = mockRsi < 40 ? 'BUY / LONG' : (mockRsi > 60 ? 'SELL / SHORT' : 'HOLD');
+
+      log(`Gemini Verdict: [${action}] with AI Confidence: ${aiConfidence}% (Required: ${minConf}%)`, aiConfidence >= minConf ? 'success' : 'warn');
+
+      await new Promise(r => setTimeout(r, 500));
+
+      if (aiConfidence >= minConf && action !== 'HOLD') {
+        const tradeAmount = ((balance * (riskPct / 100))).toFixed(2);
+        log(`🛡️ Risk Manager: Approved. Allocating ${riskPct}% ($${tradeAmount} USDT).`, 'success');
+        log(`⚡ Binance REST Order: Executed BUY for ${pair} @ Market Price.`, 'success');
+        log(`📱 Telegram Webhook: Dispatched trade notification to @user_channel`, 'info');
+      } else {
+        log(`🛡️ Risk Manager: Filtered out trade (Confidence/Setup below threshold). Preserving capital.`, 'warn');
+      }
+
+      btn.disabled = false;
+      btn.innerText = '🚀 Run AI Market Scan & Strategy Test';
+    }
+  </script>
+</body>
+</html>

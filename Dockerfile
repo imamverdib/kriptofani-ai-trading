@@ -1,30 +1,27 @@
 FROM node:20-alpine
 
-# Set working directory
 WORKDIR /app
 
-# Install dependencies
-# We need python, make, g++ for sqlite3 building if needed, but alpine usually needs them for native modules
-RUN apk add --no-cache python3 make g++ 
+# Install native compilation dependencies for SQLite
+RUN apk add --no-cache python3 make g++
 
 COPY package.json package-lock.json* ./
 RUN npm ci
 
-# Copy all files
+# Copy all source files
 COPY . .
 
-# Build Next.js
-RUN npm run build
-
-# Make start script executable
-RUN chmod +x start.sh
-
-# Environment variables
+# Set environment
 ENV NODE_ENV=production
+ENV PORT=7860
 ENV DB_PATH=/app/data/kripto.db
 
-# Expose port
-EXPOSE 3005
+# Build Next.js application
+RUN npm run build
 
-# Run the start script
+# Setup data directory permissions
+RUN mkdir -p /app/data && chmod 777 /app/data && chmod +x start.sh
+
+EXPOSE 7860
+
 CMD ["./start.sh"]

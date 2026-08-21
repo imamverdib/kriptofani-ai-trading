@@ -33,7 +33,7 @@ export function getDb(): sqlite3.Database {
           is_active INTEGER DEFAULT 1,
           warning_7d_sent INTEGER DEFAULT 0,
           warning_3d_sent INTEGER DEFAULT 0,
-          language TEXT DEFAULT 'az',
+          language TEXT DEFAULT 'en',
           last_force_run INTEGER DEFAULT 0,
           last_reminder_sent_date TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
