@@ -75,6 +75,22 @@ const decisionSchema: Schema = {
   required: ['action', 'confidence', 'reason_summary', 'risk_plan']
 };
 
+async function callGeminiWithRetry(model: any, prompt: string, maxRetries = 2): Promise<any> {
+  let attempt = 0;
+  while (attempt < maxRetries) {
+    attempt++;
+    try {
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      return JSON.parse(text);
+    } catch (err: any) {
+      console.warn(`[Spot Engine] Gemini sorğusu cəhd ${attempt} uğursuz oldu: ${err.message}`);
+      if (attempt >= maxRetries) throw err;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+}
+
 export async function runTradingEngine(targetUserId?: number) {
   let users: any[];
   if (targetUserId) {
@@ -163,9 +179,13 @@ export async function runTradingEngine(targetUserId?: number) {
             }
           });
           
-          const result = await model.generateContent(prompt);
-          const decision = JSON.parse(result.response.text());
+          const decision = await callGeminiWithRetry(model, prompt);
           console.log(`[${coin.symbol}] AI Decision:`, decision);
+
+          if (!decision || typeof decision !== 'object' || !decision.action) {
+            console.warn(`[${coin.symbol}] AI qeyri-müəyyən cavab qaytardı, atlanır.`);
+            continue;
+          }
 
           const action = decision.action;
           const confidence = decision.confidence || 0;
@@ -183,6 +203,17 @@ export async function runTradingEngine(targetUserId?: number) {
               continue;
             }
 
+            // AI Defensive Price Validation (BUY üçün SL < Qiymət < TP şərti)
+            if (action === 'BUY') {
+              const rawSL = decision.risk_plan?.stop_loss_price;
+              const rawTP = decision.risk_plan?.take_profit_price;
+              if (!rawSL || !rawTP || isNaN(rawSL) || isNaN(rawTP) || rawSL >= currentPrice || rawTP <= currentPrice) {
+                console.warn(`[${coin.symbol}] AI qiymətləri məntiqsizdir (SL: ${rawSL}, TP: ${rawTP}, Qiymət: ${currentPrice}). Ləğv edildi.`);
+                await sendMessageToUser(user.id, user.telegram_chat_id, `⚠️ *AI Qiymət Blokadası*\n${coin.symbol} üçün AI məntiqsiz SL/TP təklif etdi (SL: $${rawSL}, TP: $${rawTP}, Qiymət: $${currentPrice}). Əməliyyat ləğv edildi.`);
+                continue;
+              }
+            }
+
             // Validate via Exchange Info
             const exchangeInfo = await getExchangeInfo(coin.symbol);
             const lotFilter = exchangeInfo.filters.find((f: any) => f.filterType === 'LOT_SIZE');
@@ -192,16 +223,23 @@ export async function runTradingEngine(targetUserId?: number) {
             const maxAllowedRiskUsd = availableUsdt * ((riskConfig?.max_risk_pct || 2) / 100);
 
             if (action === 'BUY') {
-               const requestedSizeUsd = decision.risk_plan.position_size_usd || 0;
+               const requestedSizeUsd = decision.risk_plan?.position_size_usd || 0;
                const finalSizeUsd = Math.min(requestedSizeUsd, maxAllowedRiskUsd);
                
                if (finalSizeUsd < 10) {
                  await sendMessageToUser(user.id, user.telegram_chat_id, `⚠️ *Limit Xətası*\n${coin.symbol} alış məbləği ($${finalSizeUsd.toFixed(2)}) Binance-in minimum $10 limitindən az olduğu üçün əməliyyat ləğv edildi.`);
                  continue;
                }
+
+               // Pre-flight Fee & Balance Check (0.1% komissiya nəzərə alınmaqla)
+               if (availableUsdt < finalSizeUsd * 1.001) {
+                 await sendMessageToUser(user.id, user.telegram_chat_id, `⚠️ *Balans Xətası*\n${coin.symbol} üçün tələb olunan $${finalSizeUsd.toFixed(2)} məbləğ mövcud sərbəst balansınızdan ($${availableUsdt.toFixed(2)}) çoxdur.`);
+                 continue;
+               }
+
                quantity = finalSizeUsd / currentPrice;
             } else {
-               quantity = sellableAssetBalance; // Sell all logic for MVP
+               quantity = sellableAssetBalance;
                const sellValueUsd = quantity * currentPrice;
 
                if (sellValueUsd < 10 && sellValueUsd > 0) {
@@ -227,12 +265,52 @@ export async function runTradingEngine(targetUserId?: number) {
               // 1. Place Market Entry Order
               const entryOrder = await placeMarketOrder(apiKey, apiSecret, coin.symbol, action, quantity);
               
-              // 2. Place OCO Order
-              try {
-                await placeOCOOrder(apiKey, apiSecret, coin.symbol, action, quantity, tpPrice, slTrigger, slLimit);
-              } catch (ocoErr: any) {
-                console.error('OCO placement failed:', ocoErr);
-                await sendMessageToUser(user.id, user.telegram_chat_id, `⚠️ OCO yerləşdirmə xətası: ${ocoErr.message}`);
+              // 2. Place OCO Order with 3 Retries & Emergency Orphan Position Protection
+              if (action === 'BUY') {
+                let ocoSuccess = false;
+                let ocoAttempts = 0;
+                let lastOcoErr: any = null;
+
+                while (!ocoSuccess && ocoAttempts < 3) {
+                  ocoAttempts++;
+                  try {
+                    // Slight buffer adjustment if retry
+                    const adjustFactor = ocoAttempts > 1 ? (1 - (ocoAttempts - 1) * 0.001) : 1;
+                    const adjustedSlTrigger = formatPrice(slTrigger * adjustFactor, parseFloat(priceFilter.tickSize));
+                    const adjustedSlLimit = formatPrice(adjustedSlTrigger * 0.998, parseFloat(priceFilter.tickSize));
+
+                    await placeOCOOrder(apiKey, apiSecret, coin.symbol, action, quantity, tpPrice, adjustedSlTrigger, adjustedSlLimit);
+                    ocoSuccess = true;
+                  } catch (ocoErr: any) {
+                    lastOcoErr = ocoErr;
+                    console.error(`OCO attempt ${ocoAttempts} failed for ${coin.symbol}:`, ocoErr.message);
+                    if (ocoAttempts < 3) {
+                      await new Promise(res => setTimeout(res, 1500));
+                    }
+                  }
+                }
+
+                // If OCO still fails, protect user capital via EMERGENCY MARKET SELL
+                if (!ocoSuccess) {
+                  console.error(`CRITICAL: OCO failed 3 times for ${coin.symbol}. Executing EMERGENCY EXIT!`);
+                  try {
+                    await placeMarketOrder(apiKey, apiSecret, coin.symbol, 'SELL', quantity);
+                    await sendMessageToUser(
+                      user.id,
+                      user.telegram_chat_id,
+                      `🚨 *TƏCİLİ QORUMA İŞƏ DÜŞDÜ*\n\n${coin.symbol} alışından sonra Stop-Loss (OCO) yerləşdirilməsi 3 cəhddən sonra uğursuz oldu (${lastOcoErr?.message}).\n\nVəsaitinizin qorumasız qalmaması üçün koinlər dərhal bazar qiymətindən geri satıldı və balans qorundu.`
+                    );
+                    continue;
+                  } catch (exitErr: any) {
+                    console.error(`EMERGENCY EXIT FAILED for ${coin.symbol}:`, exitErr);
+                    await sendMessageToUser(
+                      user.id,
+                      user.telegram_chat_id,
+                      `🔥 *KRİTİK XƏBƏRDARLIQ*\n\n${coin.symbol} üçün Stop-Loss yerləşdirilə bilmədi və təcili satış icra olunmadı! Zəhmət olmasa Binance hesabınıza daxil olaraq mövqeni manual bağlayın!`
+                    );
+                    continue;
+                  }
+                }
               }
 
               const dedupeKey = `trade_${coin.symbol}_${action}_${Date.now()}`;

@@ -157,6 +157,22 @@ const futuresDecisionSchema: Schema = {
   required: ['action', 'confidence', 'reason_summary', 'risk_plan'],
 };
 
+async function callGeminiFuturesWithRetry(model: any, prompt: string, maxRetries = 2): Promise<any> {
+  let attempt = 0;
+  while (attempt < maxRetries) {
+    attempt++;
+    try {
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      return JSON.parse(text);
+    } catch (err: any) {
+      console.warn(`[Futures Engine] Gemini sorğusu cəhd ${attempt} uğursuz oldu: ${err.message}`);
+      if (attempt >= maxRetries) throw err;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // PHASE 1: Futures Analysis Engine (runs every 15 minutes)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -384,9 +400,13 @@ If WAIT: explain briefly why no setup meets the rules.
             },
           });
 
-          const result = await model.generateContent(prompt);
-          const decision = JSON.parse(result.response.text());
+          const decision = await callGeminiFuturesWithRetry(model, prompt);
           console.log(`[FUTURES][${symbol}] AI Decision:`, decision);
+
+          if (!decision || typeof decision !== 'object' || !decision.action) {
+            console.warn(`[FUTURES][${symbol}] AI qeyri-müəyyən cavab qaytardı, atlanır.`);
+            continue;
+          }
 
           const action = decision.action;
           const confidence = decision.confidence || 0;
@@ -447,9 +467,26 @@ If WAIT: explain briefly why no setup meets the rules.
             }
 
             // Validate R:R ratio (minimum 1:2)
-            const entryPrice = decision.risk_plan.entry_price || currentPrice;
-            const slPrice = decision.risk_plan.stop_loss_price;
-            const tp1Price = decision.risk_plan.take_profit_1;
+            const entryPrice = decision.risk_plan?.entry_price || currentPrice;
+            const slPrice = decision.risk_plan?.stop_loss_price;
+            const tp1Price = decision.risk_plan?.take_profit_1;
+
+            // ──── AI DEFENSIVE PRICE VALIDATION ────
+            if (action === 'LONG') {
+              if (!slPrice || !tp1Price || isNaN(slPrice) || isNaN(tp1Price) || slPrice >= entryPrice || tp1Price <= entryPrice) {
+                console.warn(`[FUTURES][${symbol}] AI qiymətləri məntiqsizdir (SL: ${slPrice}, Entry: ${entryPrice}, TP1: ${tp1Price}). Ləğv edildi.`);
+                await sendMessageToUser(user.id, user.telegram_chat_id,
+                  `⚠️ *Futures Qiymət Blokadası*\n${symbol}: AI məntiqsiz LONG qiymətləri təklif etdi (SL: $${slPrice}, Entry: $${entryPrice}, TP: $${tp1Price}). Əmr ləğv edildi.`);
+                continue;
+              }
+            } else if (action === 'SHORT') {
+              if (!slPrice || !tp1Price || isNaN(slPrice) || isNaN(tp1Price) || slPrice <= entryPrice || tp1Price >= entryPrice) {
+                console.warn(`[FUTURES][${symbol}] AI qiymətləri məntiqsizdir (SL: ${slPrice}, Entry: ${entryPrice}, TP1: ${tp1Price}). Ləğv edildi.`);
+                await sendMessageToUser(user.id, user.telegram_chat_id,
+                  `⚠️ *Futures Qiymət Blokadası*\n${symbol}: AI məntiqsiz SHORT qiymətləri təklif etdi (SL: $${slPrice}, Entry: $${entryPrice}, TP: $${tp1Price}). Əmr ləğv edildi.`);
+                continue;
+              }
+            }
 
             // ──── ENTRY PRICE VALIDATION (P1) ────
             // AI-nın verdiyi entry qiyməti cari qiymətdən çox fərqlidirsə ləğv et
@@ -486,12 +523,19 @@ If WAIT: explain briefly why no setup meets the rules.
 
             const leverage = riskConfig.leverage || 5;
             const maxRiskUsd = availableUsdt * ((riskConfig.max_risk_pct || 2) / 100);
-            const requestedSizeUsd = decision.risk_plan.position_size_usd || 0;
+            const requestedSizeUsd = decision.risk_plan?.position_size_usd || 0;
             const finalSizeUsd = Math.min(requestedSizeUsd, maxRiskUsd);
 
             if (finalSizeUsd < 5) {
               await sendMessageToUser(user.id, user.telegram_chat_id,
                 `⚡ *Futures Limit Xətası*\n${symbol}: Pozisiya ölçüsü ($${finalSizeUsd.toFixed(2)}) minimum limitdən azdır. Ləğv edildi.`);
+              continue;
+            }
+
+            // Pre-flight Margin/Balance Check
+            if (availableUsdt < finalSizeUsd * 1.002) {
+              await sendMessageToUser(user.id, user.telegram_chat_id,
+                `⚠️ *Futures Balans Xətası*\n${symbol}: Tələb olunan marja ($${finalSizeUsd.toFixed(2)}) mövcud sərbəst balansınızdan ($${availableUsdt.toFixed(2)}) çoxdur.`);
               continue;
             }
 
@@ -502,8 +546,8 @@ If WAIT: explain briefly why no setup meets the rules.
 
             const formattedSL = formatFuturesPrice(slPrice, parseFloat(priceFilter.tickSize));
             const formattedTP1 = formatFuturesPrice(tp1Price, parseFloat(priceFilter.tickSize));
-            const formattedTP2 = formatFuturesPrice(decision.risk_plan.take_profit_2, parseFloat(priceFilter.tickSize));
-            const formattedTP3 = formatFuturesPrice(decision.risk_plan.take_profit_3, parseFloat(priceFilter.tickSize));
+            const formattedTP2 = formatFuturesPrice(decision.risk_plan?.take_profit_2 || tp1Price * 1.01, parseFloat(priceFilter.tickSize));
+            const formattedTP3 = formatFuturesPrice(decision.risk_plan?.take_profit_3 || tp1Price * 1.02, parseFloat(priceFilter.tickSize));
 
             if (quantity < parseFloat(lotFilter.minQty)) {
               console.log(`[FUTURES][${symbol}] Quantity too small`);
@@ -522,14 +566,48 @@ If WAIT: explain briefly why no setup meets the rules.
             const side = action === 'LONG' ? 'BUY' : 'SELL';
             const entryOrder = await placeFuturesMarketOrder(apiKey, apiSecret, symbol, side, quantity);
 
-            // Place initial Stop Loss
+            // Place initial Stop Loss with 3 Retries & Emergency Orphan Position Protection
             const slSide = action === 'LONG' ? 'SELL' : 'BUY';
-            try {
-              await placeFuturesStopOrder(apiKey, apiSecret, symbol, slSide, quantity, formattedSL);
-            } catch (slErr: any) {
-              console.error('Futures SL placement failed:', slErr);
-              await sendMessageToUser(user.id, user.telegram_chat_id,
-                `⚠️ Futures SL yerləşdirmə xətası: ${slErr.message}`);
+            let slPlaced = false;
+            let slAttempts = 0;
+            let lastSlErr: any = null;
+
+            while (!slPlaced && slAttempts < 3) {
+              slAttempts++;
+              try {
+                const adjustFactor = slAttempts > 1 ? (action === 'LONG' ? (1 - (slAttempts - 1) * 0.001) : (1 + (slAttempts - 1) * 0.001)) : 1;
+                const adjustedSL = formatFuturesPrice(slPrice * adjustFactor, parseFloat(priceFilter.tickSize));
+                await placeFuturesStopOrder(apiKey, apiSecret, symbol, slSide, quantity, adjustedSL);
+                slPlaced = true;
+              } catch (slErr: any) {
+                lastSlErr = slErr;
+                console.error(`[FUTURES][${symbol}] SL attempt ${slAttempts} failed:`, slErr.message);
+                if (slAttempts < 3) {
+                  await new Promise(res => setTimeout(res, 1500));
+                }
+              }
+            }
+
+            // CRITICAL: If SL failed 3 times, EMERGENCY CLOSE to avoid liquidation!
+            if (!slPlaced) {
+              console.error(`[FUTURES][${symbol}] CRITICAL: SL failed 3 times! Executing EMERGENCY CLOSE!`);
+              try {
+                await placeFuturesMarketOrder(apiKey, apiSecret, symbol, slSide, quantity);
+                await sendMessageToUser(
+                  user.id,
+                  user.telegram_chat_id,
+                  `🚨 *TƏCİLİ FUTURES QORUMASI*\n\n${symbol} ${action} açıldıqdan sonra Stop-Loss qoyulması 3 cəhddən sonra uğursuz oldu (${lastSlErr?.message}).\n\nMövqe kredit çiyni riskindən qorunmaq üçün dərhal bazar qiyməti ilə bağlandı!`
+                );
+                continue;
+              } catch (closeErr: any) {
+                console.error(`[FUTURES][${symbol}] EMERGENCY CLOSE FAILED:`, closeErr);
+                await sendMessageToUser(
+                  user.id,
+                  user.telegram_chat_id,
+                  `🔥 *KRİTİK FUTURES XƏTASI*\n\n${symbol} üçün nə Stop-Loss qoyuldu, nə də təcili bağlanış icra olundu! Dərhal Binance Futures-a daxil olub mövqeni manual bağlayın!`
+                );
+                continue;
+              }
             }
 
             // Save position to DB
