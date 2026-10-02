@@ -9,6 +9,8 @@ services:
       - "3005:3005" # Expose the Next.js port
     volumes:
       - ./data:/app/data # Mount the data directory to persist SQLite DB
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
       - PORT=3005

@@ -13,7 +13,7 @@ COPY . .
 
 # Set environment
 ENV NODE_ENV=production
-ENV PORT=7860
+ENV PORT=3005
 ENV DB_PATH=/app/data/kripto.db
 
 # Build Next.js application
@@ -22,6 +22,6 @@ RUN npm run build
 # Setup data directory permissions
 RUN mkdir -p /app/data && chmod 777 /app/data && chmod +x start.sh
 
-EXPOSE 7860
+EXPOSE 3005
 
 CMD ["./start.sh"]

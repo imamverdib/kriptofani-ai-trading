@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "concurrently \"next dev -p 7860\" \"npm run worker\"",
     "build": "next build",
-    "start": "next start -p 7860",
+    "start": "next start -p 3005",
     "lint": "eslint",
     "worker": "tsx scripts/worker.ts"
   },
