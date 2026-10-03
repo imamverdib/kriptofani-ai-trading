@@ -593,3 +593,7 @@ Son kod mərhələsində əvvəl qeyd olunan 43 tip xətası bağlandı, wallet 
 ## Şəxsi istifadə üçün offline qəbulun tamamlanması
 
 48 test, tam lint (0 xəta/0 xəbərdarlıq), TypeScript, secretsiz production build və HTTP idarəetmə yoxlamaları keçdi. Cashflow conservation, SIGKILL/restart, backup/restore/migration və müstəqil watchdog/outbox sınaqlarının nəticələri [offline-acceptance.md](docs/offline-acceptance.md) faylında verilib. Real birja qəbulunu və gəlirlilik sübutunu əvəz etmir.
+
+## İki hesab üçün cari hazırlıq
+
+İki hesab limiti/admission, ayrı monitor və analiz icrası, açar üzrə müvəqqəti API bloklanması, hər hesabın health xəbərdarlığı və private onboarding tamamlandı. 54 test və ayrıca production build üzərində iki sessiyalı HTTP qəbul keçdi. Cari qurulma və real/demo test siyahısı: [two-account-readiness.md](docs/two-account-readiness.md). Real hesab bağlantısı, operator sirlərinin konfiqurasiyası və canlı qəbul bu offline mərhələdə edilməyib.

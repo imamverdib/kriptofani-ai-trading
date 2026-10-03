@@ -10,7 +10,7 @@ license: mit
 
 # KriptoFani
 
-Personal Binance Spot / USDT-M trading application with a Next.js dashboard, a persistent execution worker, recorded decisions and tenant-scoped fill accounting. Developed by [Imamverdi Behbudlu](https://behbudlu.com).
+Private two-account Binance Spot / USDT-M trading application with a Next.js dashboard, a persistent execution worker, recorded decisions and tenant-scoped fill accounting. Developed by [Imamverdi Behbudlu](https://behbudlu.com).
 
 The current `risk-v2` strategy and execution system have local regression tests. Profitability, live exchange acceptance and 100-user execution latency have **not** been established. Read the [audit](codex_analiz_comments.md) and [remediation / migration runbook](docs/audit-remediation.md) before using an existing trading account.
 
@@ -22,6 +22,8 @@ The current `risk-v2` strategy and execution system have local regression tests.
 - Futures native close-position stop remains on the exchange across partial exits. Local break-even/trailing requires a healthy worker. Spot uses OCO with a market-stop leg.
 - Real fill quantities, commissions and funding drive reporting. Legacy history remains separate from verified PnL.
 - Closed-candle trend/RSI inputs and an AI direction proposal; deterministic stop, sizing and risk limits. AI confidence is not a calibrated probability of profit.
+
+The two-account deployment uses explicit user admission and independent account monitoring/analysis lanes. Follow the [two-account setup and acceptance runbook](docs/two-account-readiness.md); public registration is closed by default.
 
 ## Local setup
 
@@ -63,4 +65,4 @@ Review tooling does not create/cancel exchange orders. Mutating review actions f
 
 ## Validation and remaining scope
 
-48 regression tests, TypeScript, an isolated production build and HTTP authorization smoke checks passed. Repository-wide lint now passes with zero errors/warnings. Crash/restart, WAL backup/restore, legacy migration, capital reconciliation and notification failure/retry are covered by offline acceptance tests. See [offline acceptance](docs/offline-acceptance.md). Live exchange/demo acceptance, production-account restore rehearsal, empirical strategy validation and distributed multi-tenant scale remain unverified or unimplemented; details are tracked in [audit-remediation.md](docs/audit-remediation.md).
+54 regression tests, TypeScript, an isolated production build and HTTP authorization smoke checks passed. Repository-wide lint now passes with zero errors/warnings. Crash/restart, WAL backup/restore, legacy migration, capital reconciliation and notification failure/retry are covered by offline acceptance tests. See [offline acceptance](docs/offline-acceptance.md). Live exchange/demo acceptance, production-account restore rehearsal, empirical strategy validation and distributed multi-tenant scale remain unverified or unimplemented; details are tracked in [audit-remediation.md](docs/audit-remediation.md).

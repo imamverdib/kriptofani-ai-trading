@@ -8,7 +8,7 @@ Tarix: 2026-10-03. Bu mərhələ production hesabına qoşulmadan aparılıb. Bi
 |---|---|
 | Repository-wide lint | `npm run lint`: 0 xəta, 0 xəbərdarlıq. Əvvəlki 161 xəta/47 xəbərdarlıq bağlanıb; qaydalar söndürülməyib. |
 | Statik yoxlama | `npm run typecheck`: keçdi. |
-| Testlər | `npm test`: 48 keçdi, 0 uğursuz, 0 skipped. |
+| Testlər | `npm test`: 54 keçdi, 0 uğursuz, 0 skipped. |
 | Production build | Real `.env`, real DB, JWT/API/Telegram açarları olmayan ayrıca checkout-da Next.js webpack build keçdi; 58 route/page. JWT açarı build vaxtında tələb edilmir, autentifikasiya əməliyyatında minimum 32 simvol tələb edilir. |
 | HTTP qəbul | Login; icazəsiz cron/jobs/Telegram rəddi; worker olmayan health; təkrar pause; paused manual-job rəddi; risk input validation/persistence; futures pause; admin izolyasiyası və dashboard yoxlamaları keçdi. |
 
@@ -71,3 +71,7 @@ Bütün hostun, diskin və ya internetin sıradan çıxması zamanı eyni hostda
 ## Hələ real/demo mühit tələb edən qəbul
 
 Binance-in real order/algo/OCO cavabları, hesab icazələri, real partial fill/slippage, native stop icrası və Telegram çatdırılması bu offline sınaqlarla təsdiqlənmir. Növbəti mərhələ uyğun demo/testnet hesabında qəbul sınağıdır. Strategiyanın gəlirliliyi ayrıca dataset və forward nəticə tələb edir. Bu sənəd “100% gəlirli” və ya “real kapital üçün risksiz” hökmü deyil.
+
+## İki hesab mərhələsi
+
+İki hesab üzrə admission, müstəqil icra, hesab monitorinqi və təkrar işlədilə bilən production HTTP qəbul sınağı əlavə edildi. Cari nəticələr və qurulma ardıcıllığı [two-account-readiness.md](two-account-readiness.md) sənədindədir.

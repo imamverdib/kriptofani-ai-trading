@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Activity, Loader2 } from 'lucide-react';
 
 export default function Register() {
+  const [invitation,setInvitation]=useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -36,7 +37,7 @@ export default function Register() {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ username, password, invitation })
       });
       
       const data = await res.json();
@@ -74,7 +75,7 @@ export default function Register() {
         </div>
         
         <h2 style={{ textAlign: 'center', marginBottom: '8px' }}>Create Account</h2>
-        <p className="page-subtitle" style={{ textAlign: 'center', fontSize: '0.9rem' }}>Start automated algorithmic trading today</p>
+        <p className="page-subtitle" style={{ textAlign: 'center', fontSize: '0.9rem' }}>Private two-account deployment — invitation required</p>
         
         {error && (
           <div className="bg-danger-dim text-danger" style={{ padding: '12px', borderRadius: '8px', marginBottom: '20px', fontSize: '0.9rem', textAlign: 'center' }}>
@@ -83,6 +84,7 @@ export default function Register() {
         )}
 
         <form onSubmit={handleRegister}>
+          <div className="input-group"><label className="input-label" htmlFor="invitation">Invitation code</label><input id="invitation" className="input-field" type="password" value={invitation} onChange={e=>setInvitation(e.target.value)} required /></div>
           <div className="input-group">
             <label className="input-label">Username</label>
             <input 
@@ -101,6 +103,8 @@ export default function Register() {
               type="password" 
               className="input-field" 
               placeholder="••••••••" 
+              minLength={12}
+              maxLength={128}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required

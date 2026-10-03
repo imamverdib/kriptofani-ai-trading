@@ -17,7 +17,9 @@
     "replay": "tsx scripts/replay.ts",
     "trading:review": "tsx scripts/trading-review.ts",
     "watchdog": "tsx scripts/watchdog.ts",
-    "db:backup": "tsx scripts/database-backup.ts"
+    "db:backup": "tsx scripts/database-backup.ts",
+    "accounts": "tsx scripts/accounts.ts",
+    "test:two-accounts:http": "node scripts/two-account-http-smoke.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

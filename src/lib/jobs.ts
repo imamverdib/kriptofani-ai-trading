@@ -1,3 +1,4 @@
+import {assertTradingUser,tradingUserIds} from './deployment-policy';
 import {errorMessage} from '@/lib/errors';
 import type {JobRow} from './trading-rows';
 import { randomUUID } from 'node:crypto';
@@ -10,6 +11,7 @@ export async function enqueue(kind:JobKind,userId=0){
  });
 }
 export async function enqueueManual(kind:'spot'|'futures',userId:number){
+ assertTradingUser(userId);
  return transaction(async sql=>{
   const field=kind==='spot'?'last_force_run':'last_futures_force_run',cooldown=kind==='spot'?900000:600000;
   const user=await sql.get('SELECT * FROM users WHERE id=?',[userId]);
@@ -21,12 +23,12 @@ export async function enqueueManual(kind:'spot'|'futures',userId:number){
   const id=randomUUID();await sql.run("INSERT INTO trading_jobs(id,kind,user_id,state,created_at) VALUES (?,?,?,'QUEUED',?)",[id,kind,userId,now]);return {id,state:'QUEUED'};
  });
 }
-export async function processOneJob(run:(kind:JobKind,userId?:number)=>Promise<void>){
- return withOwner('analysis-worker',async()=>{
+export async function processOneJob(run:(kind:JobKind,userId?:number)=>Promise<void>,laneUserId=0){
+ return withOwner(`analysis-worker:${laneUserId}`,async()=>{
   // Ownership may only be recovered after the old local process is dead.
-  await transaction(sql=>sql.run("UPDATE trading_jobs SET state='QUEUED' WHERE state='RUNNING'"));
+  await transaction(sql=>sql.run("UPDATE trading_jobs SET state='QUEUED' WHERE state='RUNNING' AND user_id=?",[laneUserId]));
   const job=await transaction(async sql=>{
-   const row=await sql.get<JobRow>("SELECT * FROM trading_jobs WHERE state='QUEUED' ORDER BY CASE WHEN kind='monitor' THEN 0 ELSE 1 END,created_at LIMIT 1");
+   const row=await sql.get<JobRow>("SELECT * FROM trading_jobs WHERE state='QUEUED' AND user_id=? ORDER BY CASE WHEN kind='monitor' THEN 0 ELSE 1 END,created_at LIMIT 1",[laneUserId]);
    if(row)await sql.run("UPDATE trading_jobs SET state='RUNNING',started_at=? WHERE id=?",[Date.now(),row.id]);return row;
   });
   if(!job)return false;
@@ -34,8 +36,9 @@ export async function processOneJob(run:(kind:JobKind,userId?:number)=>Promise<v
    if(job.user_id===0&&job.kind!=='monitor'){
     const users=await read(sql=>sql.all<{id:number}>("SELECT id FROM users WHERE is_active=1 AND subscription_status='active' ORDER BY id"));
     // Rotate the initial account every schedule window; no permanent first-user priority.
-    const shift=users.length?Math.floor(Date.now()/1800000)%users.length:0;
-    for(const u of [...users.slice(shift),...users.slice(0,shift)])await enqueue(job.kind,u.id);
+    const admitted=users.filter(u=>tradingUserIds().includes(u.id));
+    const shift=admitted.length?Math.floor(Date.now()/1800000)%admitted.length:0;
+    for(const u of [...admitted.slice(shift),...admitted.slice(0,shift)])await enqueue(job.kind,u.id);
    }else await run(job.kind,job.user_id||undefined);await transaction(sql=>sql.run("UPDATE trading_jobs SET state='COMPLETED',finished_at=? WHERE id=?",[Date.now(),job.id]))}
   catch(e){await transaction(sql=>sql.run("UPDATE trading_jobs SET state='FAILED',finished_at=?,error=? WHERE id=?",[Date.now(),e instanceof Error?errorMessage(e):'Job failed',job.id]))}
   return true;

@@ -1,3 +1,4 @@
+import {assertTradingUser} from './deployment-policy';
 import {heartbeatHealthy} from './watchdog';
 import {errorMessage} from '@/lib/errors';
 import type {FillRow,RiskRow,UserTradingRow} from './trading-rows';
@@ -286,6 +287,7 @@ export async function monitorPosition(p:Position,g:Gateway,currentPrice:number){
  }
 }
 export async function assertEntryEnabled(userId:number,market:Market){
+ assertTradingUser(userId);
  const heartbeat=await read(sql=>sql.get<{value:string}>("SELECT value FROM system_settings WHERE key='worker_heartbeat'"));
  if(!heartbeatHealthy(heartbeat?.value))throw new Error('Worker heartbeat missing/stale; new entries disabled');
  if(process.env.TRADING_ENABLED!=='true')throw new Error('New entries disabled (TRADING_ENABLED)');

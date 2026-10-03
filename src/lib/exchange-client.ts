@@ -1,5 +1,5 @@
 import type {SymbolInfo} from './exchange-types';
-import { createHmac } from 'node:crypto';
+import { createHmac,createHash } from 'node:crypto';
 import type { Market } from './trading-store';
 
 export type Credentials = { key:string; secret:string };
@@ -9,6 +9,7 @@ export class ExchangeError extends Error {
 const roots={spot:process.env.BINANCE_SPOT_URL || 'https://api.binance.com',futures:process.env.BINANCE_FUTURES_URL || 'https://fapi.binance.com'};
 const cache=new Map<string,{expires:number; value:Promise<unknown>}>();
 const blocked=new Map<string,number>();
+const privateBlocked=new Map<string,number>();
 let tokens=900, last=Date.now();
 let orderTokens=30, orderLast=Date.now();
 const clocks=new Map<string,{offset:number;expires:number}>();
@@ -23,6 +24,8 @@ async function budget(root:string,weight:number,mutating:boolean,priority:boolea
 }
 export async function exchange<T = Record<string, unknown>>(market:Market, endpoint:string, params:Record<string,string|number|boolean>={}, credentials?:Credentials, method='GET', options:{priority?:boolean;weight?:number;cacheMs?:number}={}):Promise<T>{
   const root=roots[market];
+  const identity=credentials?`${root}:${createHash('sha256').update(credentials.key).digest('hex')}`:null;
+  if(identity&&(privateBlocked.get(identity)||0)>Date.now())throw new ExchangeError('Account API circuit temporarily open',-2015);
   if(!/^https:\/\//.test(root))throw new Error('Exchange requires HTTPS');
   const cacheKey=`${root}${endpoint}?${new URLSearchParams(Object.entries(params).map(([k,v])=>[k,String(v)]))}`;
   if(!credentials&&method==='GET'&&options.cacheMs){
@@ -48,10 +51,12 @@ export async function exchange<T = Record<string, unknown>>(market:Market, endpo
       if(used>900)tokens=Math.min(tokens,Math.max(0,1050-used));
       if(response.status===429||response.status===418){blocked.set(root,Date.now()+Math.max(60000,Number(response.headers.get('retry-after')||60)*1000));}
       const data=await response.json();
+      if(identity&&(response.status===401||[-2014,-2015].includes(Number(data.code))))privateBlocked.set(identity,Date.now()+30000);
       if(!response.ok)throw new ExchangeError(`Binance ${data.code ?? response.status}: ${String(data.msg||'request rejected').slice(0,240)}`,Number(data.code||response.status),method!=='GET'&&(response.status>=500||response.status===408));
       return data;
     }catch(e){
       if(e instanceof ExchangeError)throw e;
+      if(identity)privateBlocked.set(identity,Date.now()+10000);
       // Never include signed URLs, keys or fetch cause in logs.
       throw new ExchangeError('Exchange transport/response failure',0,method!=='GET');
     }

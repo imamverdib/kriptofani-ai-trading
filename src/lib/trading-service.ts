@@ -222,13 +222,21 @@ export async function runAnalysis(m:Market,targetUserId?:number){
  }
 }
 export async function monitorAccountUnlocked(userId:number){
+ let failure:string|null=null;
  for(const p of await positions(userId)){
   try{await monitorPosition(p,gateway(await credentials(userId,p.market)),await price(p.market,p.symbol))}
-  catch(e){await freeze(userId,`${p.symbol}: ${e instanceof Error?errorMessage(e):'reconciliation failed'}`)}
+  catch(e){failure=`${p.symbol}: ${e instanceof Error?errorMessage(e):'reconciliation failed'}`;await freeze(userId,failure)}
  }
+ return failure;
  // Existing legacy positions remain visible, but are never silently sold/adopted by a new strategy.
 }
 export async function monitorAll(targetUserId?:number){
  const rows=await read(sql=>sql.all<{user_id:number}>('SELECT DISTINCT user_id FROM account_keys'+(targetUserId?' WHERE user_id=?':''),targetUserId?[targetUserId]:[]));
- for(const u of rows)await accountOwner(u.user_id,async()=>{await monitorAccountUnlocked(u.user_id);const risk=await read(sql=>sql.get<{updated_at:number}>('SELECT updated_at FROM risk_state WHERE user_id=?',[u.user_id]));if(!risk||Date.now()-risk.updated_at>60000){try{await accountSnapshot(u.user_id)}catch(e){await freeze(u.user_id,e instanceof Error?errorMessage(e):'Account reconciliation failed')}}});
+ await Promise.all(rows.map(u=>accountOwner(u.user_id,async()=>{
+  await transaction(sql=>sql.run('INSERT INTO account_health(user_id,created_at,last_started) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET last_started=excluded.last_started',[u.user_id,Date.now(),Date.now()]));
+  let failure=await monitorAccountUnlocked(u.user_id);
+  const risk=await read(sql=>sql.get<{updated_at:number}>('SELECT updated_at FROM risk_state WHERE user_id=?',[u.user_id]));
+  if(!failure&&(!risk||Date.now()-risk.updated_at>60000)){try{await accountSnapshot(u.user_id)}catch(e){failure=e instanceof Error?e.message:'Account reconciliation failed';await freeze(u.user_id,failure)}}
+  await transaction(sql=>sql.run('UPDATE account_health SET last_error=?,last_success=CASE WHEN ? IS NULL THEN ? ELSE last_success END WHERE user_id=?',[failure,failure,Date.now(),u.user_id]));
+ })));
 }

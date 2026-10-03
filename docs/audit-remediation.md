@@ -59,7 +59,7 @@ Tarixi point-in-time siqnal dataset-i, walk-forward split, untouched holdout, re
 ## Yoxlama nəticəsi
 
 - 40 test keçdi: execution faults, partial fill, risk/decimal arithmetic, tenant ownership, crypto context, job dedupe, native stop, actual liquidation buffer və replay.
-- 100 tenant üçün lokal SQLite reservation sınağı təxminən 0.5 saniyə çəkdi. Bu 100 istifadəçinin birjada real-time icrasının benchmark-ı deyil.
+- Əvvəlki mərhələdə 100 tenant üçün lokal SQLite reservation sınağı təxminən 0.5 saniyə çəkdi. Bu 100 istifadəçinin birjada real-time icrasının benchmark-ı deyil.
 - TypeScript yoxlaması və Next.js 16.2.6 webpack production build keçdi; 58 route/page yaradıldı. Build real `.env` və DB-siz ayrıca müvəqqəti checkout-da edildi.
 - Təcrid olunmuş HTTP smoke: `/login` 200; secret/session olmadan cron, futures monitor, Telegram webhook və jobs 401; worker olmadan health 503.
 - Əvvəl qeyd olunan 43 `no-explicit-any` xətası bağlandı. Exchange DTO-ları, fill/risk/config/job SQL row tipləri və `unknown` default-ları əlavə edildi; execution, store, service, exchange client, wallet-flows, legacy-review, reporting, jobs, outbox və review script üzrə seçilmiş lint yoxlaması keçir. Tam `npm run lint` hələ keçmir: digər modullar və testlər daxil olmaqla 161 xəta, 47 xəbərdarlıq qalır. Seçilmiş yoxlamanın keçməsi repository-wide lint-in keçməsi demək deyil.
@@ -67,7 +67,7 @@ Tarixi point-in-time siqnal dataset-i, walk-forward split, untouched holdout, re
 
 ## 100+ istifadəçiyə açılmamışdan əvvəl qalan iş
 
-SQLite single-host izolyasiyası multi-host scale arxitekturasının əvəzi deyil. PostgreSQL, distributed ownership/fencing, shared IP/UID rate budgets, tenant fairness/load SLA, reconciliation gecikməsi ölçüləri, user-data streams və monitor backlog alert-ləri ayrıca mərhələdir. Hazırkı worker tenant-ları ardıcıl monitor edir; 100+ hesab üçün 5 saniyəlik dövr zəmanəti yoxdur. Public data cache və həcm rezervi order sıxlığını azaldır, internal market competition-u ləğv etmir.
+SQLite single-host izolyasiyası multi-host scale arxitekturasının əvəzi deyil. PostgreSQL, distributed ownership/fencing, shared IP/UID rate budgets, tenant fairness/load SLA, reconciliation gecikməsi ölçüləri, user-data streams və monitor backlog alert-ləri ayrıca mərhələdir. Hazırkı worker iki admission hesabını müstəqil monitor/analiz işləri ilə icra edir; 100+ hesab üçün 5 saniyəlik dövr zəmanəti yoxdur. Public data cache və həcm rezervi order sıxlığını azaldır, internal market competition-u ləğv etmir.
 
 Bağlanmış kod risklərini, layihənin digər modullarındakı statik tip borcunu, dəstəklənməyən hesab topologiyalarını və empirik gəlirlilik yoxlamasını eyni “tam hazır” statusuna salmaq düzgün deyil. Şəxsi istifadə üçün daha təhlükəsiz icra bazası yaradılıb; kənar istifadəçilərə production açılışı ayrıca qəbul sübutu tələb edir.
 
@@ -78,3 +78,7 @@ Bağlanmış kod risklərini, layihənin digər modullarındakı statik tip borc
 - Legacy arxivləşdirmə API açarı olmadığı üçün hesabı səhvən flat saymır; canlı exposure, adi/algo/spot open order və UNKNOWN intent olduqda bloklanır. Köhnə açıq mövqeyə saxta giriş fill-i yazılmır.
 - Risk baseline yaradıldıqdan sonra istifadəçinin exchange UID-si dəyişdirilə bilmir; əks halda köhnə cashflow/high-water yeni hesabın kapitalı ilə qarışardı. Eyni UID-nin key rotasiyası saxlanır.
 - Əlavə 7 testlə cəmi 40 test keçdi; TypeScript və seçilmiş lint yoxlamaları keçdi.
+
+## Cari status: iki hesab üçün offline qəbul
+
+Yuxarıdakı 40-test və lint borcu nəticələri əvvəlki mərhələnin tarixçəsidir. Cari vəziyyət: 54 test, tam lint və TypeScript keçir; ayrıca production build ilə iki sessiyalı HTTP qəbul sınağı keçir. Admission maksimum iki hesaba məhdudlaşdırılıb, müstəqil monitor/analiz işləri və per-account health əlavə edilib. Qurulma addımları, sınaq sübutu və qalan real/demo qəbul [two-account-readiness.md](two-account-readiness.md) sənədindədir.

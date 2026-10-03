@@ -13,7 +13,7 @@ before(async()=>{
 });
 after(async()=>{await rm(directory,{recursive:true,force:true})});
 async function user(){
- const id=++counter;await store.transaction(async sql=>{await sql.run("INSERT INTO users(id,username,password_hash,is_active,subscription_status) VALUES (?,?,?,1,'active')",[id,`test${id}`,'not-a-password']);await sql.run('INSERT INTO futures_risk_configs(user_id,is_futures_active) VALUES (?,1)',[id]);await sql.run('INSERT INTO risk_configs(user_id) VALUES (?)',[id]);await sql.run('INSERT INTO exchange_accounts VALUES (?,?)',[`uid${id}`,id]);for(const m of ['spot','futures'])await sql.run('INSERT INTO account_keys VALUES (?,?,?,?)',[id,m,`uid${id}`,`${id}-${m}`])});return id;
+ const id=++counter;process.env.TRADING_USER_IDS=[Math.max(1,id-1),id].join(',');await store.transaction(async sql=>{await sql.run("INSERT INTO users(id,username,password_hash,is_active,subscription_status) VALUES (?,?,?,1,'active')",[id,`test${id}`,'not-a-password']);await sql.run('INSERT INTO futures_risk_configs(user_id,is_futures_active) VALUES (?,1)',[id]);await sql.run('INSERT INTO risk_configs(user_id) VALUES (?)',[id]);await sql.run('INSERT INTO exchange_accounts VALUES (?,?)',[`uid${id}`,id]);for(const m of ['spot','futures'])await sql.run('INSERT INTO account_keys VALUES (?,?,?,?)',[id,m,`uid${id}`,`${id}-${m}`])});return id;
 }
 async function position(m:'spot'|'futures'='futures',id?:number,symbol='BTCUSDT',max=3){
  const uid=id||await user();return ex.reserve({user_id:uid,market:m,symbol,side:'LONG',stop_price:99,tp1:102,tp2:103,tp3:104,leverage:m==='spot'?1:5,risk_reserved:10,notional_reserved:1000,reason:'fixture'},max,10000);
@@ -120,12 +120,12 @@ test('never-submitted stale intent is abandoned after recovery',async()=>{
  const p=await position(),g=new FakeExchange();await ex.prepare(p,'ENTRY','MARKET',10);
  await ex.monitorPosition(p,g,100);assert.equal(g.calls.length,0);assert.equal((await ex.getPosition(p.id,p.user_id)).state,'REJECTED');
 });
-test('100 tenant reservations remain isolated with bounded SQLite writers',async()=>{
- const ids=[];for(let n=0;n<100;n++)ids.push(await user());
+test('two admitted tenant reservations remain isolated with bounded SQLite writers',async()=>{
+ const ids=[];for(let n=0;n<2;n++)ids.push(await user());
  const begin=Date.now();const p=await Promise.all(ids.map(id=>position('futures',id)));
- assert.equal(new Set(p.map(row=>row.id)).size,100);
- for(let n=0;n<100;n++)assert.equal((await ex.positions(ids[n])).length,1);
- console.log(`100-tenant isolated SQLite reservation check: ${Date.now()-begin} ms (not an exchange latency benchmark)`);
+ assert.equal(new Set(p.map(row=>row.id)).size,2);
+ for(let n=0;n<2;n++)assert.equal((await ex.positions(ids[n])).length,1);
+ console.log(`Two-tenant isolated SQLite reservation check: ${Date.now()-begin} ms (not an exchange latency benchmark)`);
 });
 test('exchange-side stop fill closes ledger without a second market exit',async()=>{
  const p=await position(),g=new FakeExchange();await ex.openPosition(p,10,g);

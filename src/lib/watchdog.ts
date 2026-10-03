@@ -14,3 +14,17 @@ export async function checkWorker(now=Date.now()){
   return healthy;
  }));
 }
+export async function checkAccountHealth(now=Date.now()){
+ return withOwner('account-health-watchdog',()=>transaction(async sql=>{
+  const users=await sql.all<{id:number;telegram_chat_id:string|null}>('SELECT DISTINCT u.id,u.telegram_chat_id FROM users u JOIN account_keys k ON k.user_id=u.id');
+  for(const user of users){
+   await sql.run('INSERT OR IGNORE INTO account_health(user_id,created_at) VALUES (?,?)',[user.id,now]);
+   const health=await sql.get<{created_at:number;last_success:number|null;reported_state:string}>('SELECT * FROM account_health WHERE user_id=?',[user.id]);if(!health)continue;
+   const stale=now-(health.last_success||health.created_at)>60000,state=stale?'stale':'healthy';if(health.reported_state===state)continue;
+   await sql.run('UPDATE account_health SET reported_state=? WHERE user_id=?',[state,user.id]);
+   if(!stale&&health.reported_state==='unknown')continue;
+   const text=stale?'Your account monitor is stale; verify exchange protection. Other account monitoring continues independently.':'Your account monitor recovered; review any frozen risk state.';
+   await sql.run('INSERT INTO notifications(user_id,title,message) VALUES (?,?,?)',[user.id,'Account monitor',text]);await sql.run('INSERT INTO notification_outbox(user_id,chat_id,text) VALUES (?,?,?)',[user.id,user.telegram_chat_id,text]);
+  }
+ }));
+}

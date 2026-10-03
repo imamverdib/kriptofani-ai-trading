@@ -75,6 +75,7 @@ export async function withOwner<T>(resource:string, fn:()=>Promise<T>):Promise<T
   try{return await fn()}finally{await transaction(sql=>sql.run('DELETE FROM execution_locks WHERE resource=? AND token=?',[resource,token]))}
 }
 const schema=[
+`CREATE TABLE IF NOT EXISTS account_health (user_id INTEGER PRIMARY KEY REFERENCES users(id),created_at INTEGER NOT NULL,last_started INTEGER,last_success INTEGER,last_error TEXT,reported_state TEXT NOT NULL DEFAULT 'unknown')`,
 `CREATE TABLE IF NOT EXISTS capital_checkpoints (user_id INTEGER PRIMARY KEY REFERENCES users(id),inventory TEXT NOT NULL,fill_cursor INTEGER NOT NULL,income_cursor INTEGER NOT NULL,flow_cursor INTEGER NOT NULL,updated_at INTEGER NOT NULL)`,
 `CREATE TABLE IF NOT EXISTS fee_valuations (user_id INTEGER NOT NULL,market TEXT NOT NULL,symbol TEXT NOT NULL,trade_id TEXT NOT NULL,price REAL NOT NULL,time INTEGER NOT NULL,source_trade_id TEXT NOT NULL,PRIMARY KEY(user_id,market,symbol,trade_id),FOREIGN KEY(user_id,market,symbol,trade_id) REFERENCES execution_fills(user_id,market,symbol,trade_id))`,
 `CREATE TABLE IF NOT EXISTS external_flows (uid TEXT NOT NULL,user_id INTEGER NOT NULL REFERENCES users(id),kind TEXT NOT NULL,ref TEXT NOT NULL,time INTEGER NOT NULL,amount REAL NOT NULL,PRIMARY KEY(uid,kind,ref))`,

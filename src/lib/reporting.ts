@@ -15,6 +15,8 @@ export async function tradingReport(userId:number,market:Market){
  const funding=market==='futures'?await read(sql=>sql.get(`SELECT COALESCE(SUM(amount),0) total,COALESCE(SUM(CASE WHEN time>=? THEN amount ELSE 0 END),0) today FROM income_ledger WHERE user_id=? AND type='FUNDING_FEE' AND asset='USDT'`,[midnight,userId])):{total:0,today:0};
  const risk=await read(sql=>sql.get<RiskRow>('SELECT * FROM risk_state WHERE user_id=?',[userId]));
  const warnings:string[]=[];
+ const health=await read(sql=>sql.get<{created_at:number;last_success:number|null;last_error:string|null}>('SELECT created_at,last_success,last_error FROM account_health WHERE user_id=?',[userId]));
+ if(health&&(health.last_error||Date.now()-(health.last_success||health.created_at)>60000))warnings.push('Your account monitoring requires attention; check the latest risk alert.');
  const marks=await read(sql=>sql.get('SELECT COUNT(*) count FROM fee_valuations WHERE user_id=? AND market=?',[userId,market]));
  if(marks?.count)warnings.push('Non-USDT fees use documented historical market marks.');
  if(totals?.missing)warnings.push('Some commission assets require historical conversion; PnL is incomplete.');

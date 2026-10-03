@@ -1,3 +1,4 @@
+import {assertTradingUser} from '@/lib/deployment-policy';
 import {errorMessage} from '@/lib/errors';
 import { NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
@@ -8,6 +9,7 @@ import { accountUid } from '@/lib/exchange-client';
 export async function POST(req:Request){
  const session=await getSession();if(!session)return NextResponse.json({error:'Unauthorized'},{status:401});
  try{
+  assertTradingUser(session.id);
   const body=await req.json();const market:Market=body.futuresApiKey!==undefined?'futures':'spot';
   const key=market==='spot'?body.binanceApiKey:body.futuresApiKey,secret=market==='spot'?body.binanceApiSecret:body.futuresApiSecret;
   if(typeof key!=='string'||typeof secret!=='string'||key.length<16||secret.length<16)throw new Error('Valid API credentials required');

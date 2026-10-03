@@ -26,3 +26,6 @@ test('account UID comes from authenticated spot account, never arbitrary user in
 test('bad response body after POST is execution unknown',async()=>{
  respond(()=>new Response('invalid JSON'));await assert.rejects(exchange('futures','/fapi/v1/order',{},{key:'fake',secret:'fake'},'POST'),e=>e instanceof ExchangeError&&e.unknown);
 });
+test('an invalid account API key opens only its own circuit',async()=>{
+ respond(()=>Response.json({code:-2015,msg:'Invalid key'},{status:401}));await assert.rejects(accountUid({key:'broken-account-key',secret:'fixture'}));const before=requests.length;respond(()=>Response.json({uid:'healthy-uid'}));await assert.rejects(accountUid({key:'broken-account-key',secret:'fixture'}),/circuit/);assert.equal(requests.length,before);assert.equal(await accountUid({key:'healthy-account-key',secret:'fixture'}),'healthy-uid');
+});

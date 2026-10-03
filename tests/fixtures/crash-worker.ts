@@ -2,6 +2,7 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {accountOwner,execute,prepare,reserve,getPosition,monitorPosition,type Gateway,type Position,type Intent} from '../../src/lib/execution';
 import {withOwner,transaction,read} from '../../src/lib/trading-store';
 import type {ExchangeOrder,ExchangeFill} from '../../src/lib/exchange-types';
+process.env.TRADING_USER_IDS='1';
 const mode=process.argv[2],file=process.env.FIXTURE_EXCHANGE_PATH!;
 interface State {actual:number;orders:Record<string,ExchangeOrder>;trades:Record<string,ExchangeFill[]>;submissions:string[]}
 const state:State=mode==='crash'?{actual:0,orders:{},trades:{},submissions:[]}:JSON.parse(readFileSync(file,'utf8'));
