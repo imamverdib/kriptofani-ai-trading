@@ -13,22 +13,6 @@ export default function AdminLogsPage() {
   const [refreshCount, setRefreshCount] = useState(0);
   const terminalRef = useRef<HTMLDivElement>(null);
 
-  const fetchLogs = async () => {
-    setLoading(true);
-    try {
-      const url = `/api/admin/logs?limit=${limit}&search=${encodeURIComponent(search)}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.success) {
-        setLogs(data.logs || []);
-      }
-    } catch (err) {
-      console.error('Failed to load logs:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const clearLogs = async () => {
     if (!confirm('Bütün sistem loglarını təmizləmək istədiyinizdən əminsiniz?')) return;
     try {
@@ -40,14 +24,16 @@ export default function AdminLogsPage() {
       } else {
         alert('Failed to clear system logs.');
       }
-    } catch (err) {
+    } catch {
       alert('An error occurred.');
     }
   };
 
   // Poll for new logs
   useEffect(() => {
-    fetchLogs();
+    const controller=new AbortController();
+    fetch(`/api/admin/logs?limit=${limit}&search=${encodeURIComponent(search)}`,{signal:controller.signal}).then(r=>r.json()).then(data=>{if(data.success)setLogs(data.logs||[])}).catch(()=>{}).finally(()=>{if(!controller.signal.aborted)setLoading(false)});
+    return ()=>controller.abort();
   }, [limit, search, refreshCount]);
 
   useEffect(() => {

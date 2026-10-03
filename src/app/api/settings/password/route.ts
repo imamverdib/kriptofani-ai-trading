@@ -1,3 +1,5 @@
+import type {AppUser} from '@/lib/app-types';
+import {errorMessage} from '@/lib/errors';
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { getSession } from '@/lib/auth';
@@ -21,7 +23,7 @@ export async function POST(req: Request) {
     }
 
     // Fetch user
-    const user: any = await dbGet('SELECT * FROM users WHERE id = ?', [session.id]);
+    const user = await dbGet<AppUser>('SELECT * FROM users WHERE id = ?', [session.id]);
     if (!user) {
       return NextResponse.json({ error: 'İstifadəçi tapılmadı' }, { status: 404 });
     }
@@ -39,7 +41,7 @@ export async function POST(req: Request) {
     await dbRun('UPDATE users SET password_hash = ? WHERE id = ?', [hashed, session.id]);
 
     return NextResponse.json({ success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }

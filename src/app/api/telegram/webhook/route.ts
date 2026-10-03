@@ -1,139 +1,46 @@
+import type {AppUser} from '@/lib/app-types';
 import { NextResponse } from 'next/server';
-import { dbRun, dbGet } from '@/lib/db';
-import { processUserCommand, sendMessageToUser } from '@/lib/telegram';
-
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
-
-export async function POST(req: Request) {
-  try {
-    if (TELEGRAM_WEBHOOK_SECRET) {
-      const secretHeader = req.headers.get('x-telegram-bot-api-secret-token');
-      if (secretHeader !== TELEGRAM_WEBHOOK_SECRET) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-    }
-
-    const body = await req.json();
-
-    if (body.callback_query) {
-      const callbackQuery = body.callback_query;
-      const data = callbackQuery.data;
-      const message = callbackQuery.message;
-      const chatId = message.chat.id;
-
-      if (data.startsWith('approve_payment_') || data.startsWith('reject_payment_')) {
-        const isApprove = data.startsWith('approve_payment_');
-        const paymentId = parseInt(data.split('_').pop() || '0');
-
-        if (paymentId) {
-          const payment: any = await dbGet('SELECT * FROM payments WHERE id = ?', [paymentId]);
-          if (payment && payment.status === 'pending') {
-            const newStatus = isApprove ? 'approved' : 'rejected';
-            await dbRun('UPDATE payments SET status = ? WHERE id = ?', [newStatus, paymentId]);
-            
-            if (isApprove) {
-              await dbRun("UPDATE users SET subscription_status = 'active', is_active = 1, subscription_expires_at = datetime('now', '+30 days') WHERE id = ?", [payment.user_id]);
-              const targetUser: any = await dbGet('SELECT telegram_chat_id FROM users WHERE id = ?', [payment.user_id]);
-              if (targetUser && targetUser.telegram_chat_id) {
-                await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ chat_id: targetUser.telegram_chat_id, text: `✅ Təbrik edirik! Ödənişiniz təsdiqləndi. Hesabınız 30 gün müddətinə aktivləşdirildi!` })
-                });
-              }
-            } else {
-              await dbRun("UPDATE users SET subscription_status = 'frozen' WHERE id = ?", [payment.user_id]);
-              const targetUser: any = await dbGet('SELECT telegram_chat_id FROM users WHERE id = ?', [payment.user_id]);
-              if (targetUser && targetUser.telegram_chat_id) {
-                await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ chat_id: targetUser.telegram_chat_id, text: `❌ Ödənişiniz (TXID: ${payment.txid}) təsdiqlənmədi. Zəhmət olmasa düzgün TXID daxil edin.` })
-                });
-              }
-            }
-
-            if (TELEGRAM_BOT_TOKEN) {
-              await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  chat_id: chatId,
-                  message_id: message.message_id,
-                  text: message.text + `\n\nNəticə: ${isApprove ? '✅ Təsdiqləndi' : '❌ Rədd edildi'}`
-                })
-              });
-            }
-          }
-        }
-      }
-      return NextResponse.json({ ok: true });
-    }
-
-    if (body.message && body.message.chat && body.message.from) {
-      const chatId = body.message.chat.id;
-      const username = body.message.from.username;
-      const text = body.message.text ? body.message.text.trim() : '';
-
-      if (!text) {
-        return NextResponse.json({ ok: true });
-      }
-
-      // Check if user is linked by telegram_chat_id
-      let user: any = await dbGet('SELECT * FROM users WHERE telegram_chat_id = ?', [String(chatId)]);
-
-      // If user is not linked by chat_id, try to link by telegram_username or username
-      if (!user && username) {
-        const foundUser: any = await dbGet('SELECT * FROM users WHERE telegram_username = ? COLLATE NOCASE OR username = ? COLLATE NOCASE', [username, username]);
-        if (foundUser) {
-          await dbRun('UPDATE users SET telegram_chat_id = ?, telegram_username = ? WHERE id = ?', [String(chatId), username, foundUser.id]);
-          user = await dbGet('SELECT * FROM users WHERE id = ?', [foundUser.id]);
-        }
-      }
-
-      // Sync only telegram_username — never overwrite the login username
-      if (user && username && user.telegram_username !== username) {
-        try {
-          await dbRun('UPDATE users SET telegram_username = ? WHERE id = ?', [username, user.id]);
-        } catch (e) {
-          console.error('Failed to sync telegram_username:', e);
-        }
-      }
-
-      // If still no user linked, prompt for setup
-      if (!user) {
-        if (TELEGRAM_BOT_TOKEN) {
-          if (text.startsWith('/start') && username) {
-             await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: chatId, text: `⚠️ Sistemdə @${username} istifadəçi adı ilə hesab tapılmadı. Zəhmət olmasa, əvvəlcə KriptoFani veb panelindən qeydiyyatdan keçin və Telegram istifadəçi adınızı düzgün daxil edin.` })
-            });
-          } else {
-             await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: chatId, text: `⚠️ Zəhmət olmasa, əvvəlcə KriptoFani veb panelindən tənzimləmələri edin və Telegram istifadəçi adınızı qeyd edin. (Sizin Telegram istifadəçi adınız: @${username || 'yoxdur'})` })
-            });
-          }
-        }
-        return NextResponse.json({ ok: true });
-      }
-
-      // Record incoming USER message
-      await dbRun(
-        'INSERT INTO bot_messages (user_id, telegram_chat_id, sender, text) VALUES (?, ?, ?, ?)',
-        [user.id, String(chatId), 'USER', text]
-      );
-
-      // Process the command
-      await processUserCommand(user, String(chatId), text);
-    }
-    
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    console.error('Webhook xətası:', err);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+import { createHash } from 'node:crypto';
+import { secretMatches } from '@/lib/service-auth';
+import { read,transaction } from '@/lib/trading-store';
+import { processUserCommand } from '@/lib/telegram';
+export async function POST(req:Request){
+ if(!secretMatches(req.headers.get('x-telegram-bot-api-secret-token'),process.env.TELEGRAM_WEBHOOK_SECRET))return NextResponse.json({error:'Unauthorized'},{status:401});
+ try{
+  const body=await req.json();if(!Number.isSafeInteger(body.update_id))return NextResponse.json({error:'Invalid update'},{status:400});
+  if(body.callback_query){
+   const cb=body.callback_query;
+   const admins=(process.env.ADMIN_TELEGRAM_USER_IDS||'').split(',').map(s=>s.trim());
+   if(!admins.includes(String(cb.from?.id)))return NextResponse.json({error:'Forbidden'},{status:403});
+   const match=/^(approve|reject)_payment_(\d+)$/.exec(String(cb.data));if(!match)return NextResponse.json({ok:true});
+   await transaction(async sql=>{
+    const dedupe=await sql.run('INSERT OR IGNORE INTO telegram_updates VALUES (?,?)',[body.update_id,Date.now()]);if(!dedupe.changes)return;
+    const p=await sql.get("SELECT * FROM payments WHERE id=? AND status='pending'",[Number(match[2])]);if(!p)return;
+    const approved=match[1]==='approve';await sql.run('UPDATE payments SET status=? WHERE id=?',[approved?'approved':'rejected',p.id]);
+    if(approved)await sql.run("UPDATE users SET subscription_status='active',subscription_expires_at=datetime('now','+30 days') WHERE id=?",[p.user_id]);
+    const u=await sql.get('SELECT telegram_chat_id FROM users WHERE id=?',[p.user_id]);
+    await sql.run('INSERT INTO notification_outbox(user_id,chat_id,text) VALUES (?,?,?)',[p.user_id,u?.telegram_chat_id,approved?'Ödəniş təsdiqləndi. Ticarət aktivliyi ayrıca idarə olunur.':'Ödəniş təsdiqlənmədi.']);
+   });return NextResponse.json({ok:true});
   }
+  const message=body.message;
+  if(message?.chat?.type!=='private'||!message.from?.id||String(message.chat.id)!==String(message.from.id))return NextResponse.json({ok:true});
+  const text=String(message.text||'').trim(),telegramId=String(message.from.id);
+  const token=/^\/start ([a-f0-9]{48})$/.exec(text);
+  if(token){
+   await transaction(async sql=>{
+    const link=await sql.get('SELECT * FROM telegram_links WHERE hash=? AND expires_at>?',[createHash('sha256').update(token[1]).digest('hex'),Date.now()]);if(!link)return;
+    const existing=await sql.get('SELECT user_id FROM telegram_identities WHERE telegram_id=?',[telegramId]);if(existing&&existing.user_id!==link.user_id)throw new Error('Telegram identity already linked');
+    await sql.run('DELETE FROM telegram_identities WHERE user_id=?',[link.user_id]);
+    await sql.run('INSERT INTO telegram_identities VALUES (?,?)',[telegramId,link.user_id]);
+    await sql.run('UPDATE users SET telegram_chat_id=?,telegram_username=? WHERE id=?',[telegramId,message.from.username||null,link.user_id]);
+    await sql.run('DELETE FROM telegram_links WHERE user_id=?',[link.user_id]);
+    await sql.run('INSERT INTO notification_outbox(user_id,chat_id,text) VALUES (?,?,?)',[link.user_id,telegramId,'Telegram hesabınız təhlükəsiz bağlandı.']);
+   });return NextResponse.json({ok:true});
+  }
+  const identity=await read(sql=>sql.get<AppUser>('SELECT u.* FROM telegram_identities t JOIN users u ON u.id=t.user_id WHERE t.telegram_id=?',[telegramId]));
+  if(!identity)return NextResponse.json({ok:true});
+  const claimed=await transaction(sql=>sql.run('INSERT OR IGNORE INTO telegram_updates VALUES (?,?)',[body.update_id,Date.now()]));
+  if(claimed.changes&&text)await processUserCommand(identity,telegramId,text);
+  return NextResponse.json({ok:true});
+ }catch{return NextResponse.json({error:'Webhook processing failed'},{status:500})}
 }

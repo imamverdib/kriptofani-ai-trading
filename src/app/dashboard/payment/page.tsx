@@ -1,4 +1,5 @@
 'use client';
+import type { AppUser } from '@/lib/app-types';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -6,7 +7,7 @@ import { Wallet, ShieldCheck, Copy, CheckCircle2, Clock, ChevronDown, ChevronUp 
 
 export default function PaymentPage() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const [, setUser] = useState<AppUser | null>(null);
   const [txid, setTxid] = useState('');
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -63,7 +64,7 @@ export default function PaymentPage() {
       } else {
         alert(data.error || 'Ödəniş tapılmadı, xətalıdır və ya fərqli ünvana göndərilib.');
       }
-    } catch (err) {
+    } catch {
       alert('Sistem xətası baş verdi.');
     } finally {
       setLoading(false);

@@ -1,3 +1,4 @@
+import {errorMessage} from '@/lib/errors';
 export interface TypeSafeDecision {
   action: 'LONG' | 'SHORT' | 'WAIT';
   confidence: number; // 0 to 100
@@ -27,7 +28,7 @@ export async function evaluateWithJev(marketState: string): Promise<TypeSafeDeci
 
   const requestBody = {
     state: marketState,
-    model: 'jev-latest',
+    model: process.env.TYPESAFE_MODEL || 'jev-latest',
     questions: {
       trade_action: {
         type: 'choice',
@@ -76,7 +77,7 @@ export async function evaluateWithJev(marketState: string): Promise<TypeSafeDeci
       return null;
     }
 
-    const data: any = await res.json();
+    const data: {answers?:Record<string,{confidence?:number;noul?:number;choice?:string;score?:number;probabilities?:Record<string,number>}>} = await res.json();
     const latencyMs = Date.now() - startTime;
 
     const answers = data.answers || {};
@@ -84,6 +85,7 @@ export async function evaluateWithJev(marketState: string): Promise<TypeSafeDeci
     const trendAns = answers.trend_strength || {};
     const riskAns = answers.false_breakout_risk || {};
 
+    if (typeof actionAns.confidence !== 'number' || !Number.isFinite(actionAns.confidence) || actionAns.confidence < 0 || actionAns.confidence > 1 || typeof riskAns.noul !== 'number' || !Number.isFinite(riskAns.noul) || riskAns.noul < 0 || riskAns.noul > 1) return null;
     const rawAction = (actionAns.choice || 'WAIT').toUpperCase();
     const action: 'LONG' | 'SHORT' | 'WAIT' =
       rawAction === 'LONG' || rawAction === 'SHORT' ? rawAction : 'WAIT';
@@ -100,8 +102,8 @@ export async function evaluateWithJev(marketState: string): Promise<TypeSafeDeci
       probabilities: actionAns.probabilities || {},
       latencyMs
     };
-  } catch (err: any) {
-    console.error('[TypeSafe Jev Exception]:', err.message);
+  } catch (err) {
+    console.error('[TypeSafe Jev Exception]:', errorMessage(err));
     return null;
   }
 }

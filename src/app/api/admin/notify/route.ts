@@ -1,3 +1,5 @@
+import type {AppUser} from '@/lib/app-types';
+import {errorMessage} from '@/lib/errors';
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbGet, dbRun } from '@/lib/db';
@@ -8,14 +10,14 @@ export async function POST(req: Request) {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const me: any = await dbGet("SELECT role FROM users WHERE id = ?", [session.id]);
+    const me = await dbGet<AppUser>("SELECT role FROM users WHERE id = ?", [session.id]);
     if (!me || me.role !== 'admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const { targetUserId, message } = await req.json();
 
-    const targetUser: any = await dbGet("SELECT * FROM users WHERE id = ?", [targetUserId]);
+    const targetUser = await dbGet<AppUser>("SELECT * FROM users WHERE id = ?", [targetUserId]);
     if (!targetUser) {
         return NextResponse.json({ error: 'İstifadəçi tapılmadı' }, { status: 404 });
     }
@@ -29,7 +31,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }

@@ -1,9 +1,10 @@
 'use client';
+import type { AppUser } from '@/lib/app-types';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { ShieldAlert, Users, LayoutDashboard, CreditCard, LogOut, ArrowLeft, LifeBuoy, Scroll } from 'lucide-react';
+import { ShieldAlert, LayoutDashboard, ArrowLeft, LifeBuoy, Scroll } from 'lucide-react';
 
 export default function AdminLayout({
   children,
@@ -12,7 +13,7 @@ export default function AdminLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

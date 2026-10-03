@@ -1,3 +1,4 @@
+import {errorMessage} from '@/lib/errors';
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { dbGet, dbRun } from '@/lib/db';
@@ -22,7 +23,7 @@ export async function POST(req: Request) {
     await dbRun('INSERT INTO risk_configs (user_id) VALUES (?)', [result.lastID]);
 
     return NextResponse.json({ success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }

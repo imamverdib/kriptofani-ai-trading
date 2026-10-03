@@ -33,7 +33,7 @@ export default function TermsPage() {
           <section>
             <h2 style={{ color: 'var(--text-primary)', fontSize: '1.3rem', marginBottom: '12px' }}>2. Non-Custodial Architecture & API Security</h2>
             <p>
-              KriptoFani operates on a non-custodial framework. We never hold, store, or have direct custody of your digital assets. All trades execute directly in your own Binance account via encrypted API communication. When generating API credentials, you must enable <strong>ONLY "Spot & Margin Trading"</strong> (and Futures where applicable). <strong>NEVER enable "Withdrawals"</strong>. API secrets are encrypted using industry-standard AES-256 encryption.
+              KriptoFani operates on a non-custodial framework. We never hold, store, or have direct custody of your digital assets. All trades execute directly in your own Binance account via encrypted API communication. When generating API credentials, you must enable <strong>ONLY &quot;Spot & Margin Trading&quot;</strong> (and Futures where applicable). <strong>NEVER enable &quot;Withdrawals&quot;</strong>. API secrets are encrypted using industry-standard AES-256 encryption.
             </p>
           </section>
 

@@ -1,58 +1,29 @@
-import cron from 'node-cron';
 import { loadEnvConfig } from '@next/env';
 loadEnvConfig(process.cwd());
-
-const PORT = process.env.PORT || 3005;
-const CRON_URL = `http://localhost:${PORT}/api/cron`;
-const FUTURES_CRON_URL = `http://localhost:${PORT}/api/futures/cron`;
-const FUTURES_MONITOR_URL = `http://localhost:${PORT}/api/futures/monitor`;
-const CRON_HEADERS: Record<string, string> = process.env.CRON_SECRET
-  ? { Authorization: `Bearer ${process.env.CRON_SECRET}` }
-  : {};
-
-console.log('🤖 KriptoAI Worker başladıldı...');
-console.log('📊 Spot: Saatlıq ticarət dövrəsi aktivdir (Hər saatın tamamında).');
-console.log('⚡ Futures: 30 dəqiqəlik analiz dövrəsi aktivdir.');
-console.log('⚡ Futures: 30 saniyəlik pozisiya izləmə aktivdir.');
-
-// ── Spot Engine: Run every hour at minute 0 ──
-cron.schedule('0 * * * *', async () => {
-  console.log(`[${new Date().toISOString()}] Saatlıq Spot dövrə işə salınır...`);
-  try {
-    const res = await fetch(CRON_URL, { headers: CRON_HEADERS });
-    const data = await res.json();
-    console.log(`[${new Date().toISOString()}] Spot cron nəticəsi:`, data);
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Spot cron sorğusu xətası:`, error);
+async function main(){
+ const {initTradingStore,transaction,read,withOwner}=await import('../src/lib/trading-store');
+ const {enqueue,processOneJob}=await import('../src/lib/jobs');
+ const {runAnalysis,monitorAll}=await import('../src/lib/trading-service');
+ const {deliverNotifications}=await import('../src/lib/outbox');
+ await initTradingStore();let stopping=false,analysisBusy=false;let lastSpot=-1,lastFutures=-1;
+ process.on('SIGTERM',()=>{stopping=true});process.on('SIGINT',()=>{stopping=true});
+ const ownership=await withOwner('worker-singleton',async()=>{
+  while(!stopping){
+   const start=Date.now();
+   await transaction(sql=>sql.run("INSERT INTO system_settings VALUES ('worker_heartbeat',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[String(start)]));
+   // Native stops remain active even if this process fails. Monitoring is independent of analysis.
+   try{await monitorAll();await deliverNotifications()}catch(e){console.error('Monitor/outbox failure:',e instanceof Error?e.message:'failure')}
+   const hour=Math.floor(start/3600000),half=Math.floor(start/1800000);
+   if(lastSpot!==hour){lastSpot=hour;await enqueue('spot')}
+   if(lastFutures!==half){lastFutures=half;await enqueue('futures')}
+   if(!analysisBusy){analysisBusy=true;void processOneJob(async(kind,userId)=>{if(kind==='monitor')await monitorAll(userId);else await runAnalysis(kind,userId)}).catch(e=>console.error('Job failure',e instanceof Error?e.message:'failure')).finally(()=>{analysisBusy=false})}
+   // Billing only prevents new entries. It never disables exposure protection.
+   await transaction(sql=>sql.run("UPDATE users SET subscription_status='unpaid',is_active=0 WHERE subscription_status='active' AND subscription_expires_at IS NOT NULL AND datetime(subscription_expires_at)<=datetime('now')"));
+   await new Promise(r=>setTimeout(r,Math.max(1000,5000-(Date.now()-start))));
   }
-});
-
-// ── Futures Analysis: Run every 30 minutes ──
-cron.schedule('*/30 * * * *', async () => {
-  console.log(`[${new Date().toISOString()}] Futures analiz dövrəsi işə salınır...`);
-  try {
-    const res = await fetch(FUTURES_CRON_URL, { headers: CRON_HEADERS });
-    const data = await res.json();
-    console.log(`[${new Date().toISOString()}] Futures cron nəticəsi:`, data);
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Futures cron sorğusu xətası:`, error);
-  }
-});
-
-// ── Futures Position Monitor: Run every 30 seconds ──
-cron.schedule('* * * * *', async () => {
-  try {
-    await fetch(FUTURES_MONITOR_URL, { headers: CRON_HEADERS });
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Futures monitor xətası:`, error);
-  }
-});
-
-cron.schedule('* * * * *', async () => {
-  await new Promise(resolve => setTimeout(resolve, 30000));
-  try {
-    await fetch(FUTURES_MONITOR_URL, { headers: CRON_HEADERS });
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Futures monitor xətası (30s):`, error);
-  }
-});
+  while(analysisBusy)await new Promise(r=>setTimeout(r,100));
+  await read(sql=>sql.get('SELECT 1'));return true;
+ });
+ if(!ownership)throw new Error('Another worker owns this database; multi-host SQLite execution is unsupported');
+}
+main().catch(e=>{console.error(e instanceof Error?e.message:'Worker startup failed');process.exitCode=1});

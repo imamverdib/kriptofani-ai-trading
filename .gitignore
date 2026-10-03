@@ -28,3 +28,6 @@ test-*.ts
 .vercel
 *.tsbuildinfo
 next-env.d.ts
+
+# Local database snapshots
+backups/

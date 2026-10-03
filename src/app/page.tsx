@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Activity, Zap, ShieldCheck, TrendingUp, Cpu, BarChart3, Bot } from 'lucide-react';
+import { Activity, Zap, ShieldCheck, Cpu, Bot } from 'lucide-react';
 
 export default function Home() {
   return (

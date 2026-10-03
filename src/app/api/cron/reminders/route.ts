@@ -1,8 +1,12 @@
+import type {AppUser} from '@/lib/app-types';
+import {errorMessage} from '@/lib/errors';
+import { cronAuthorized } from '@/lib/service-auth';
 import { NextResponse } from 'next/server';
 import { dbAll, dbRun } from '@/lib/db';
 import { sendMessageToUser } from '@/lib/telegram';
 
 export async function GET(req: Request) {
+  if (!cronAuthorized(req)) return NextResponse.json({error:'Unauthorized'},{status:401});
   try {
     // In production, you would check for an authorization header here 
     // to ensure only your cron job service can hit this endpoint.
@@ -10,7 +14,7 @@ export async function GET(req: Request) {
     const todayStr = new Date().toISOString().split('T')[0];
     
     // Fetch users who are active and have a telegram chat id and an expiration date
-    const users: any[] = await dbAll(`
+    const users = await dbAll<AppUser>(`
       SELECT id, username, telegram_chat_id, subscription_expires_at, last_reminder_sent_date 
       FROM users 
       WHERE subscription_status = 'active' 
@@ -21,6 +25,7 @@ export async function GET(req: Request) {
     let sentCount = 0;
 
     for (const user of users) {
+      if(!user.subscription_expires_at||!user.telegram_chat_id)continue;
       if (user.last_reminder_sent_date === todayStr) {
         continue; // Already sent a reminder today
       }
@@ -52,7 +57,7 @@ export async function GET(req: Request) {
     }
 
     return NextResponse.json({ success: true, reminders_sent: sentCount });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }

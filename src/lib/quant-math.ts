@@ -1,3 +1,4 @@
+import { positive } from './trading-math';
 export interface QuantPlan {
   entryPrice: number;
   stopLossPrice: number;
@@ -44,7 +45,7 @@ export function calculateATR(bars: KlineBar[], period = 14): number {
 }
 
 /**
- * Computes deterministic, high-probability Quant Risk Plan
+ * Computes a deterministic risk plan; profitability must be validated separately
  * based on structural support/resistance and ATR volatility.
  */
 export function computeQuantPlan(
@@ -54,6 +55,8 @@ export function computeQuantPlan(
   supportLevels: number[] = [],
   resistanceLevels: number[] = []
 ): QuantPlan {
+  positive(currentPrice, 'entry');
+  for (const b of bars) { positive(b.high); positive(b.low); positive(b.close); if(b.high<b.low)throw new Error('Invalid candle'); }
   const entryPrice = currentPrice;
   const atr = calculateATR(bars, 14);
   const volatilityBuffer = atr * 1.5;
@@ -77,7 +80,7 @@ export function computeQuantPlan(
     const maxSL = currentPrice * 0.980; // 2.0% max width
 
     if (stopLossPrice > minSL) stopLossPrice = minSL;
-    if (stopLossPrice < maxSL) stopLossPrice = maxSL;
+    if (stopLossPrice < maxSL) throw new Error('Structural stop exceeds volatility budget');
 
     const riskDistance = currentPrice - stopLossPrice;
     const takeProfit1 = currentPrice + riskDistance * 2.0; // 1:2 R:R (50%)
@@ -112,7 +115,7 @@ export function computeQuantPlan(
     const maxSL = currentPrice * 1.020; // 2.0%
 
     if (stopLossPrice < minSL) stopLossPrice = minSL;
-    if (stopLossPrice > maxSL) stopLossPrice = maxSL;
+    if (stopLossPrice > maxSL) throw new Error('Structural stop exceeds volatility budget');
 
     const riskDistance = stopLossPrice - currentPrice;
     const takeProfit1 = currentPrice - riskDistance * 2.0; // 1:2 R:R (50%)

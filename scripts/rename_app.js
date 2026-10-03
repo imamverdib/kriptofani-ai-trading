@@ -1,5 +1,6 @@
-const fs = require('fs');
-const path = require('path');
+(async()=>{
+const {default: fs}=await import('fs');
+const {default: path}=await import('path');
 
 function replaceInDir(dir) {
   const files = fs.readdirSync(dir);
@@ -20,3 +21,5 @@ function replaceInDir(dir) {
 }
 
 replaceInDir(path.join(process.cwd(), 'src'));
+
+})().catch(error=>{console.error(error);process.exitCode=1});

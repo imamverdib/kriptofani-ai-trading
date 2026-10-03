@@ -1,4 +1,7 @@
 'use client';
+import {checkedFetch} from '@/lib/client-request';
+import type { SpotTradeView, AssetView } from '@/lib/view-types';
+import { errorMessage } from '@/lib/errors';
 
 import { useState, useEffect } from 'react';
 import { TrendingUp, Wallet, ArrowUpRight, ArrowDownRight, ActivitySquare, Coins, RefreshCw, Timer, Zap } from 'lucide-react';
@@ -19,14 +22,17 @@ export default function Dashboard() {
     todaysProfit: 0,
   });
   
-  const [recentTrades, setRecentTrades] = useState<any[]>([]);
-  const [assets, setAssets] = useState<any[]>([]);
+  const [recentTrades, setRecentTrades] = useState<SpotTradeView[]>([]);
+  const [assets, setAssets] = useState<AssetView[]>([]);
+  const [auditWarnings, setAuditWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [isBotActive, setIsBotActive] = useState(true);
   const [toggleLoading, setToggleLoading] = useState(false);
 
   const [maxRiskPct, setMaxRiskPct] = useState(2);
+  const [riskPerTradePct, setRiskPerTradePct] = useState(0.25);
+  const [lossRiskSaving, setLossRiskSaving] = useState(false);
   const [riskLoading, setRiskLoading] = useState(false);
 
   const [minConfidence, setMinConfidence] = useState(75);
@@ -59,12 +65,12 @@ export default function Dashboard() {
   }, []);
 
   const fetchDashboardData = () => {
-    setLoading(true);
     fetch('/api/dashboard')
       .then(res => res.json())
       .then(data => {
         if (data.success) {
           setStats(data.stats);
+          setAuditWarnings(data.warnings || []);
           setRecentTrades(data.recentTrades);
           if (data.assets) setAssets(data.assets);
         }
@@ -99,8 +105,9 @@ export default function Dashboard() {
       .then(res => res.json())
       .then(data => {
         if (data.success && data.config) {
-          setMaxRiskPct(data.config.max_risk_pct || 2);
-          setMinConfidence(data.config.min_confidence || 75);
+          setMaxRiskPct(data.config.max_risk_pct ?? 2);
+          setRiskPerTradePct(data.config.risk_per_trade_pct ?? 0.25);
+          setMinConfidence(data.config.min_confidence ?? 75);
           if (data.config.target_coins) {
             setTargetCoins(data.config.target_coins.split(','));
           }
@@ -128,17 +135,27 @@ export default function Dashboard() {
         setCooldownRemaining(15 * 60);
         alert('Ticarət əməliyyatı uğurla başladıldı! Bot hazırda bazarı analiz edir. Nəticə Telegram-a göndəriləcək.');
       }
-    } catch (err) {
+    } catch {
       alert('An error occurred');
     } finally {
       setForceRunLoading(false);
     }
   };
 
+  const saveLossRisk = async () => {
+    setLossRiskSaving(true);
+    try {
+      const res = await checkedFetch('/api/settings', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({riskPerTradePct})});
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Risk saxlanmadı');
+    } catch(error) { alert(error instanceof Error ? errorMessage(error) : 'Risk saxlanmadı'); }
+    finally { setLossRiskSaving(false); }
+  };
+
   const handleToggleBot = async () => {
     setToggleLoading(true);
     try {
-      const res = await fetch('/api/auth/toggle-bot', { method: 'POST' });
+      const res = await fetch('/api/auth/toggle-bot', { method: 'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:!isBotActive}) });
       const data = await res.json();
       if (res.ok) {
         setIsBotActive(data.is_active === 1);
@@ -154,13 +171,13 @@ export default function Dashboard() {
     setMaxRiskPct(newRisk);
     setRiskLoading(true);
     try {
-      await fetch('/api/settings', {
+      await checkedFetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ maxRiskPct: newRisk })
       });
     } catch (error) {
-      console.error('Failed to update risk', error);
+      alert(errorMessage(error));window.location.reload();
     } finally {
       setRiskLoading(false);
     }
@@ -170,13 +187,13 @@ export default function Dashboard() {
     setMinConfidence(newConf);
     setConfidenceLoading(true);
     try {
-      await fetch('/api/settings', {
+      await checkedFetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ minConfidence: newConf })
       });
     } catch (error) {
-      console.error('Failed to update confidence', error);
+      alert(errorMessage(error));window.location.reload();
     } finally {
       setConfidenceLoading(false);
     }
@@ -185,7 +202,7 @@ export default function Dashboard() {
   const handleUpdateCoins = async (newCoins: string[]) => {
     setCoinsLoading(true);
     try {
-      await fetch('/api/settings', {
+      await checkedFetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetCoins: newCoins.join(',') })
@@ -218,6 +235,7 @@ export default function Dashboard() {
 
   return (
     <div className="animate-fade-in">
+      {auditWarnings.map(w => <p key={w} role="status" style={{color:"#fbbf24",padding:"12px",border:"1px solid #854d0e",borderRadius:"8px"}}>{w}</p>)}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '32px' }}>
         <div>
           <h1 className="page-title">{t.dashboard.title}</h1>
@@ -328,7 +346,7 @@ export default function Dashboard() {
             <Wallet size={20} className="text-gradient" />
           </div>
           <div style={{ fontSize: '2rem', fontWeight: 700 }}>
-            {loading ? '...' : `$${stats.balance.toLocaleString()}`}
+            {loading ? '...' : `$${stats.balance?.toLocaleString() ?? '—'}`}
           </div>
         </div>
 
@@ -387,7 +405,7 @@ export default function Dashboard() {
                     <td style={{ padding: '12px 16px', fontWeight: 600 }}>{asset.asset}</td>
                     <td style={{ padding: '12px 16px' }}>{asset.amount.toFixed(6).replace(/\.?0+$/, '')}</td>
                     <td style={{ padding: '12px 16px' }}>
-                      {asset.valueUsd > 0 ? `$${asset.valueUsd.toFixed(2)}` : '-'}
+                      {asset.valueUsd!==null && asset.valueUsd > 0 ? `$${asset.valueUsd.toFixed(2)}` : '-'}
                     </td>
                   </tr>
                 ))}
@@ -409,8 +427,8 @@ export default function Dashboard() {
           <div style={{ flex: '1 1 300px', display: 'flex', alignItems: 'center', gap: '16px' }}>
             <input 
               type="range" 
-              min="1" 
-              max="100" 
+              min="0"
+              max="20"
               value={maxRiskPct} 
               onChange={(e) => setMaxRiskPct(Number(e.target.value))}
               onMouseUp={(e) => handleUpdateRisk(Number((e.target as HTMLInputElement).value))}
@@ -421,6 +439,13 @@ export default function Dashboard() {
               {maxRiskPct}%
             </div>
           </div>
+        </div>
+
+        <div style={{display:'flex',gap:16,alignItems:'center',flexWrap:'wrap'}}>
+          <label htmlFor="loss-risk">Stop və icra xərclərinə görə əməliyyat riski (%): </label>
+          <input id="loss-risk" type="number" min="0" max="2" step="0.05" value={riskPerTradePct} onChange={e=>setRiskPerTradePct(Number(e.target.value))} />
+          <button type="button" className="btn btn-outline" disabled={lossRiskSaving} onClick={saveLossRisk}>{lossRiskSaving ? 'Saxlanır...' : 'Riski saxla'}</button>
+          <small>0 yeni girişləri dayandırır. Gap zamanı faktiki zərər bu həddi keçə bilər.</small>
         </div>
 
         <hr style={{ border: 'none', borderTop: '1px solid var(--border-light)', margin: '0' }} />
@@ -575,7 +600,7 @@ export default function Dashboard() {
               <tr>
                 <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td>
               </tr>
-            ) : recentTrades.map((trade, i) => (
+            ) : recentTrades.map((trade) => (
               <tr key={trade.id} style={{ borderTop: `1px solid var(--border-light)` }}>
                 <td style={{ padding: '16px 24px', fontWeight: 600 }}>{trade.symbol}</td>
                 <td style={{ padding: '16px 24px' }}>

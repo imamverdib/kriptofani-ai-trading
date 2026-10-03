@@ -1,4 +1,6 @@
 'use client';
+import type {SpotTradeView} from '@/lib/view-types';
+import type {AppUser} from '@/lib/app-types';
 
 import { useState, useEffect } from 'react';
 import { History, Power, TrendingUp, TrendingDown, Clock, Activity } from 'lucide-react';
@@ -6,12 +8,11 @@ import { useLanguage } from '@/context/LanguageContext';
 
 export default function HistoryPage() {
   const { t } = useLanguage();
-  const [trades, setTrades] = useState<any[]>([]);
+  const [trades, setTrades] = useState<SpotTradeView[]>([]);
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
 
   const fetchData = () => {
-    setLoading(true);
     Promise.all([
       fetch('/api/auth/me').then(res => res.json()),
       fetch('/api/trades').then(res => res.json())
@@ -27,10 +28,10 @@ export default function HistoryPage() {
   }, []);
 
   const handleToggleBot = async () => {
-    const res = await fetch('/api/auth/toggle-bot', { method: 'POST' });
+    const res = await fetch('/api/auth/toggle-bot', { method: 'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:!user?.is_active}) });
     const data = await res.json();
     if (data.success) {
-      setUser({ ...user, is_active: data.is_active });
+      setUser(current=>current?{...current,is_active:data.is_active}:null);
     }
   };
 

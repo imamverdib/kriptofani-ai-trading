@@ -1,3 +1,5 @@
+import type {AppUser} from '@/lib/app-types';
+import {errorMessage} from '@/lib/errors';
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbAll, dbRun, dbGet } from '@/lib/db';
@@ -16,9 +18,9 @@ export async function GET() {
     );
 
     return NextResponse.json({ success: true, messages });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Chat GET error:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }
 
@@ -36,7 +38,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Mətn boş ola bilməz' }, { status: 400 });
     }
 
-    const user: any = await dbGet('SELECT * FROM users WHERE id = ?', [session.id]);
+    const user = await dbGet<AppUser>('SELECT * FROM users WHERE id = ?', [session.id]);
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
@@ -51,8 +53,8 @@ export async function POST(req: Request) {
     await processUserCommand(user, user.telegram_chat_id || 'WEB', text);
 
     return NextResponse.json({ success: true });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Chat POST error:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }

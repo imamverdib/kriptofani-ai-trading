@@ -1,12 +1,13 @@
 'use client';
+import type { AppUser, Payment } from '@/lib/app-types';
 
 import { useState, useEffect } from 'react';
-import { Users, CreditCard, CheckCircle, XCircle, Clock, ShieldAlert, MessageCircle, Trash2 } from 'lucide-react';
+import { Users, CreditCard, ShieldAlert, MessageCircle, Trash2 } from 'lucide-react';
 
 export default function AdminDashboard() {
-  const [stats, setStats] = useState<any>(null);
-  const [users, setUsers] = useState<any[]>([]);
-  const [payments, setPayments] = useState<any[]>([]);
+  const [stats, setStats] = useState<{totalUsers:number;activeUsers:number;pendingPayments:number;totalRevenue:number;mrr:number;arr:number}|null>(null);
+  const [users, setUsers] = useState<AppUser[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [serverIp, setServerIp] = useState('');
   const [trc20Wallet, setTrc20Wallet] = useState('');
@@ -16,7 +17,6 @@ export default function AdminDashboard() {
   const [broadcasting, setBroadcasting] = useState(false);
 
   const fetchAdminData = () => {
-    setLoading(true);
     fetch('/api/admin?type=dashboard')
       .then(res => res.json())
       .then(data => {
@@ -58,7 +58,7 @@ export default function AdminDashboard() {
       } else {
         alert('An error occurred');
       }
-    } catch(e) {
+    } catch {
       alert('System error');
     } finally {
       setSavingSettings(false);
@@ -83,7 +83,7 @@ export default function AdminDashboard() {
       } else {
         alert(data.error || 'Xəta baş verdi');
       }
-    } catch(e) {
+    } catch {
       alert('System error');
     } finally {
       setBroadcasting(false);
@@ -105,7 +105,7 @@ export default function AdminDashboard() {
         const data = await res.json();
         alert(data.error || 'Xəta baş verdi');
       }
-    } catch (err) {
+    } catch {
       alert('System error');
     }
   };
@@ -126,7 +126,7 @@ export default function AdminDashboard() {
         const data = await res.json();
         alert(data.error || 'Xəta baş verdi');
       }
-    } catch (err) {
+    } catch {
       alert('System error');
     }
   };
@@ -334,7 +334,7 @@ export default function AdminDashboard() {
                     ) : (
                       <button onClick={() => handleAction('activate_user', u.id)} className="btn" style={{ padding: '4px 8px', fontSize: '0.8rem', color: 'var(--success)' }}>Aktiv Et</button>
                     )}
-                    <button onClick={() => { if(confirm('Are you sure you want to permanently delete this user and all associated trading data? This action cannot be undone.')) handleAction('delete_user', u.id); }} className="btn" style={{ padding: '6px', background: 'rgba(239,68,68,0.1)', color: 'var(--danger)' }} title="Delete User">
+                    <button onClick={() => { if(confirm('Archive this user? New entries will stop. Trading history and exposure monitoring will be retained.')) handleAction('delete_user', u.id); }} className="btn" style={{ padding: '6px', background: 'rgba(239,68,68,0.1)', color: 'var(--danger)' }} title="Archive User">
                       <Trash2 size={16} />
                     </button>
                   </td>

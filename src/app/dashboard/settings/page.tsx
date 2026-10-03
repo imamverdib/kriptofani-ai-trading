@@ -1,4 +1,5 @@
 'use client';
+import { errorMessage } from '@/lib/errors';
 
 import { useState, useEffect } from 'react';
 import { Settings, Save, Globe, AlertTriangle, ChevronDown, ChevronUp, Video, Lock, MessageCircle, XCircle, CheckCircle, Zap } from 'lucide-react';
@@ -20,6 +21,7 @@ export default function SettingsPage() {
   const [showTutorial, setShowTutorial] = useState(false);
   
   const [telegramStatus, setTelegramStatus] = useState<boolean>(false);
+  const [telegramCommand, setTelegramCommand] = useState('');
   const [disconnecting, setDisconnecting] = useState(false);
 
   // Futures API state
@@ -72,8 +74,8 @@ export default function SettingsPage() {
       setTelegramUsername('');
       setBinanceApiKey('');
       setBinanceApiSecret('');
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -104,8 +106,8 @@ export default function SettingsPage() {
       setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setPassLoading(false);
     }
@@ -128,8 +130,8 @@ export default function SettingsPage() {
       setFuturesApiKey('');
       setFuturesApiSecret('');
       setHasFuturesKeys(true);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setFuturesLoading(false);
     }
@@ -148,7 +150,7 @@ export default function SettingsPage() {
         setLanguage(newLang);
         setSuccess('Dil seçimi yeniləndi');
       }
-    } catch (err: any) {
+    } catch {
       setError('Dil dəyişdirilə bilmədi');
     } finally {
       setLangLoading(false);
@@ -167,7 +169,7 @@ export default function SettingsPage() {
       } else {
         setError('Xəta baş verdi');
       }
-    } catch (e) {
+    } catch {
       setError('Sistem xətası');
     } finally {
       setDisconnecting(false);
@@ -338,6 +340,10 @@ export default function SettingsPage() {
       </div>
 
       {/* Telegram Bot Panel */}
+      <div className="glass-panel" style={{padding:24,marginTop:24}}>
+        <button className="btn btn-primary" onClick={async()=>{try{const r=await fetch('/api/settings/telegram/link',{method:'POST'});const d=await r.json();if(!r.ok)throw new Error(d.error);setTelegramCommand(d.command)}catch{setError('Telegram bağlama kodu alınmadı')}}}>Telegram bağlama kodu yaradın</button>
+        {telegramCommand && <p>Bu əmri botun şəxsi çatına göndərin (10 dəqiqə etibarlıdır): <code style={{overflowWrap:'anywhere'}}>{telegramCommand}</code></p>}
+      </div>
       <div className="glass-panel" style={{ padding: '32px', marginTop: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '24px' }}>
           <MessageCircle size={20} className="text-gradient" />

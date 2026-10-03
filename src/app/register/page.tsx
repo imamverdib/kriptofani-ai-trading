@@ -1,4 +1,5 @@
 'use client';
+import {errorMessage} from '@/lib/errors';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -57,8 +58,8 @@ export default function Register() {
         router.push('/login');
       }
       
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }

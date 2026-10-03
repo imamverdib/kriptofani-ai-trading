@@ -1,4 +1,5 @@
 'use client';
+import {errorMessage} from '@/lib/errors';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -46,8 +47,8 @@ export default function Setup() {
 
       setStep(2);
       
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -83,7 +84,7 @@ export default function Setup() {
                 <div style={{ padding: '16px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', borderLeft: '4px solid var(--primary)', marginTop: '24px', marginBottom: '8px' }}>
                   <strong style={{ display: 'block', color: 'var(--primary)', marginBottom: '8px' }}>⚠️ Important Binance IP Whitelist</strong>
                   <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: '1.5' }}>
-                    To enable trading on your Binance account, copy the IP address below and select <strong>"Restrict access to trusted IPs only"</strong> when configuring your Binance API:
+                    To enable trading on your Binance account, copy the IP address below and select <strong>&quot;Restrict access to trusted IPs only&quot;</strong> when configuring your Binance API:
                   </p>
                   <div style={{ marginTop: '12px', padding: '10px 12px', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', fontFamily: 'monospace', fontSize: '1rem', color: '#fff', userSelect: 'all', cursor: 'text', textAlign: 'center', letterSpacing: '1px' }}>
                     {serverIp}
@@ -96,7 +97,7 @@ export default function Setup() {
                   <AlertTriangle size={18} />
                   Critical Security Notice
                 </div>
-                When selecting API permissions, <strong>ONLY enable "Enable Spot & Margin Trading"</strong> (and Futures if applicable). <strong>DO NOT enable "Enable Withdrawals"</strong> under any circumstances. The system cannot withdraw your funds.
+                When selecting API permissions, <strong>ONLY enable &quot;Enable Spot & Margin Trading&quot;</strong> (and Futures if applicable). <strong>DO NOT enable &quot;Enable Withdrawals&quot;</strong> under any circumstances. The system cannot withdraw your funds.
               </div>
 
               <div style={{ marginBottom: '24px' }}>
@@ -141,8 +142,8 @@ export default function Setup() {
                       <li>Click <strong>Create API</strong> and choose System Generated.</li>
                       <li>Label your key (e.g. <code>KriptoFani</code>) and complete 2FA security verification.</li>
                       <li>Click <strong>Edit Restrictions</strong> on your newly created key.</li>
-                      <li>Under API Restrictions, check <strong>ONLY "Enable Spot & Margin Trading"</strong>.</li>
-                      <li>Under IP Access Restrictions, choose "Restrict access to trusted IPs only" and paste the server IP address shown above.</li>
+                      <li>Under API Restrictions, check <strong>ONLY &quot;Enable Spot & Margin Trading&quot;</strong>.</li>
+                      <li>Under IP Access Restrictions, choose &quot;Restrict access to trusted IPs only&quot; and paste the server IP address shown above.</li>
                       <li>Copy your <strong>API Key</strong> and <strong>Secret Key</strong> into the fields below.</li>
                     </ol>
                   </div>

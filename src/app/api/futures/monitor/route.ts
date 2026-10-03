@@ -1,22 +1,8 @@
 import { NextResponse } from 'next/server';
-import { monitorFuturesPositions } from '@/lib/futures-engine';
-
-export async function GET(req: Request) {
-  try {
-    const authHeader = req.headers.get('authorization');
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    console.log(`[${new Date().toISOString()}] Futures monitor endpoint çağırıldı...`);
-
-    monitorFuturesPositions().catch(err => {
-      console.error(`[${new Date().toISOString()}] Futures monitor xətası:`, err);
-    });
-
-    return NextResponse.json({ ok: true, message: 'Futures positions monitored' });
-  } catch (err: any) {
-    console.error(`[${new Date().toISOString()}] Futures monitor xətası:`, err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
+import { cronAuthorized } from '@/lib/service-auth';
+import { enqueue } from '@/lib/jobs';
+export async function GET(req:Request) {
+ if(!cronAuthorized(req))return NextResponse.json({error:'Unauthorized'},{status:401});
+ try{return NextResponse.json({success:true,job:await enqueue('monitor')},{status:202})}
+ catch{return NextResponse.json({error:'Unable to queue work'},{status:503})}
 }

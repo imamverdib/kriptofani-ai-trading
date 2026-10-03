@@ -1,16 +1,16 @@
 'use client';
+import type { Ticket } from '@/lib/app-types';
 
 import { useState, useEffect } from 'react';
 import { LifeBuoy, Clock, CheckCircle, Send } from 'lucide-react';
 
 export default function AdminSupportPage() {
-  const [tickets, setTickets] = useState<any[]>([]);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [replyText, setReplyText] = useState<{ [key: number]: string }>({});
   const [replying, setReplying] = useState<{ [key: number]: boolean }>({});
 
   const fetchTickets = () => {
-    setLoading(true);
     fetch('/api/admin/support')
       .then(res => res.json())
       .then(data => {
@@ -43,7 +43,7 @@ export default function AdminSupportPage() {
       } else {
         alert(data.error || "Xəta baş verdi");
       }
-    } catch (err) {
+    } catch {
       alert("An error occurred");
     } finally {
       setReplying(prev => ({ ...prev, [ticketId]: false }));

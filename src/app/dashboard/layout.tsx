@@ -1,9 +1,10 @@
 'use client';
+import type { AppUser } from '@/lib/app-types';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { Activity, LayoutDashboard, History, Settings, LogOut, MessageCircle, Bell, LifeBuoy, Zap } from 'lucide-react';
+import { Activity, LayoutDashboard, History, Settings, LogOut, Bell, LifeBuoy, Zap } from 'lucide-react';
 import { LanguageProvider, useLanguage } from '@/context/LanguageContext';
 import { Language } from '@/lib/i18n';
 
@@ -14,7 +15,7 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
   // We will pass user's language to LanguageProvider
@@ -74,11 +75,11 @@ export default function DashboardLayout({
   );
 }
 
-function DashboardContent({ user, handleLogout, unreadCount, children }: any) {
+function DashboardContent({ user, handleLogout, unreadCount, children }: {user:AppUser|null;handleLogout:()=>Promise<void>;unreadCount:number;children:React.ReactNode}) {
   const { language, t } = useLanguage();
   const pathname = usePathname();
 
-  let navItems = user?.subscription_status === 'active' || user?.role === 'admin' ? [
+  const navItems: {name:string;href:string;icon:typeof LayoutDashboard;accentColor?:string;badge?:number}[] = user?.subscription_status === 'active' || user?.role === 'admin' ? [
     { name: t.sidebar.panel, href: '/dashboard', icon: LayoutDashboard },
     { name: t.sidebar.history, href: '/dashboard/history', icon: History },
     { name: 'Futures Panel', href: '/dashboard/futures', icon: Zap, accentColor: '#f59e0b' },
@@ -118,17 +119,17 @@ function DashboardContent({ user, handleLogout, unreadCount, children }: any) {
                   gap: '12px', 
                   padding: '12px 16px',
                   borderRadius: '12px',
-                  background: isActive ? ((item as any).accentColor ? `${(item as any).accentColor}20` : 'rgba(99, 102, 241, 0.15)') : 'transparent',
-                  color: isActive ? ((item as any).accentColor || 'var(--accent-primary)') : 'var(--text-secondary)',
+                  background: isActive ? (item.accentColor ? `${item.accentColor}20` : 'rgba(99, 102, 241, 0.15)') : 'transparent',
+                  color: isActive ? (item.accentColor || 'var(--accent-primary)') : 'var(--text-secondary)',
                   fontWeight: isActive ? 600 : 500,
                   transition: 'all 0.2s ease'
                 }}
               >
                 <Icon size={20} />
                 {item.name}
-                {(item as any).badge ? (
+                {item.badge ? (
                   <span style={{ marginLeft: 'auto', background: 'var(--danger)', color: '#fff', fontSize: '0.75rem', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
-                    {(item as any).badge}
+                    {item.badge}
                   </span>
                 ) : null}
               </Link>
@@ -169,7 +170,7 @@ function DashboardContent({ user, handleLogout, unreadCount, children }: any) {
                 if (res.ok) {
                   window.location.reload(); // Reload to apply language everywhere simply
                 }
-              } catch (err) {}
+              } catch {}
             }}
             style={{ 
               background: 'rgba(255,255,255,0.05)', 

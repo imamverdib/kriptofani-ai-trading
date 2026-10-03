@@ -1,4 +1,5 @@
 'use client';
+import type { Ticket } from '@/lib/app-types';
 
 import { useState, useEffect } from 'react';
 import { LifeBuoy, Send, CheckCircle, Clock } from 'lucide-react';
@@ -6,7 +7,7 @@ import { useLanguage } from '@/context/LanguageContext';
 
 export default function SupportPage() {
   const { t } = useLanguage();
-  const [tickets, setTickets] = useState<any[]>([]);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [formLoading, setFormLoading] = useState(false);
   
@@ -15,7 +16,6 @@ export default function SupportPage() {
   const [message, setMessage] = useState('');
 
   const fetchTickets = () => {
-    setLoading(true);
     fetch('/api/support')
       .then(res => res.json())
       .then(data => {
@@ -52,7 +52,7 @@ export default function SupportPage() {
       } else {
         alert(data.error || "Xəta baş verdi");
       }
-    } catch (err) {
+    } catch {
       alert("An error occurred");
     } finally {
       setFormLoading(false);

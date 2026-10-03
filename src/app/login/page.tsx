@@ -1,4 +1,5 @@
 'use client';
+import {errorMessage} from '@/lib/errors';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -32,8 +33,8 @@ export default function Login() {
 
       router.push('/dashboard');
       
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -92,7 +93,7 @@ export default function Login() {
         </form>
 
         <p style={{ textAlign: 'center', marginTop: '24px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-          Don't have an account? <Link href="/register" style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Create an account</Link>
+          Don&apos;t have an account? <Link href="/register" style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Create an account</Link>
         </p>
       </div>
     </div>

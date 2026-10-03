@@ -1,12 +1,13 @@
 'use client';
+import type { Notification } from '@/lib/app-types';
 
 import { useState, useEffect } from 'react';
-import { Bell, CheckCircle } from 'lucide-react';
+import { Bell } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 
 export default function NotificationsPage() {
   const { t } = useLanguage();
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

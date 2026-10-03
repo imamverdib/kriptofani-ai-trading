@@ -1,5 +1,6 @@
-const sqlite3 = require('sqlite3');
-const path = require('path');
+(async()=>{
+const {default: sqlite3}=await import('sqlite3');
+const {default: path}=await import('path');
 const dbPath = path.join(process.cwd(), 'kripto.db');
 const db = new sqlite3.Database(dbPath);
 
@@ -32,3 +33,5 @@ db.serialize(() => {
     else console.log('Created payments table');
   });
 });
+
+})().catch(error=>{console.error(error);process.exitCode=1});

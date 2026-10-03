@@ -5,3 +5,13 @@ node_modules
 kripto.db
 data/
 *.md
+.env*
+*.pem
+*.key
+*.db*
+*.sqlite*
+*.log*
+.vps_connect.sh
+
+# Local database snapshots
+backups/

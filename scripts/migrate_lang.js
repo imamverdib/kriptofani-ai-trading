@@ -1,5 +1,6 @@
-const sqlite3 = require('sqlite3');
-const path = require('path');
+(async()=>{
+const {default: sqlite3}=await import('sqlite3');
+const {default: path}=await import('path');
 const db = new sqlite3.Database(path.join(process.cwd(), 'kripto.db'));
 
 db.serialize(() => {
@@ -15,3 +16,5 @@ db.serialize(() => {
     }
   });
 });
+
+})().catch(error=>{console.error(error);process.exitCode=1});

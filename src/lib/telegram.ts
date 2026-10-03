@@ -1,8 +1,11 @@
+import type { AppUser } from './app-types';
+import type { SpotAccount } from './exchange-types';
+import { exchange } from './exchange-client';
 import { dbRun, dbGet } from '@/lib/db';
 import { decrypt } from '@/lib/encryption';
-import crypto from 'crypto';
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+
+
 
 export const AVAILABLE_COINS = [
   'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 
@@ -11,52 +14,21 @@ export const AVAILABLE_COINS = [
 ];
 
 export async function sendMessageToUser(userId: number, chatId: string | number, text: string) {
-  // Save to db
-  await dbRun(
-    'INSERT INTO bot_messages (user_id, telegram_chat_id, sender, text) VALUES (?, ?, ?, ?)',
-    [userId, String(chatId), 'BOT', text]
-  );
-
-  // Send to Telegram if token is available
-  if (!TELEGRAM_BOT_TOKEN || !chatId) {
-    return;
-  }
-  
-  try {
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' })
-    });
-  } catch (err) {
-    console.error('Failed to send telegram message via API', err);
-  }
+  const { transaction } = await import('./trading-store');
+  await transaction(sql=>sql.run('INSERT INTO notification_outbox(user_id,chat_id,text) VALUES (?,?,?)',[userId,chatId ? String(chatId) : null,text]));
 }
 
 export async function fetchBinanceBalance(apiKey: string, apiSecret: string): Promise<number> {
-  const endpoint = 'https://api.binance.com/api/v3/account';
-  const timestamp = Date.now();
-  const queryString = `timestamp=${timestamp}&recvWindow=10000`;
-  const signature = crypto.createHmac('sha256', apiSecret).update(queryString).digest('hex');
-  
-  const res = await fetch(`${endpoint}?${queryString}&signature=${signature}`, {
-    headers: { 'X-MBX-APIKEY': apiKey }
-  });
-  
-  if (!res.ok) {
-    throw new Error('Binance API xətası');
-  }
-  
-  const data = await res.json();
-  const usdtAsset = data.balances.find((b: any) => b.asset === 'USDT');
+  const data=await exchange<SpotAccount>('spot','/api/v3/account',{},{key:apiKey,secret:apiSecret});
+  const usdtAsset=data.balances.find(b=>b.asset==='USDT');
   if (usdtAsset) {
-    return parseFloat(usdtAsset.free) + parseFloat(usdtAsset.locked);
+    return Number(usdtAsset.free) + Number(usdtAsset.locked);
   }
   return 0;
 }
 
 export async function getOrCreateConfig(userId: number) {
-  let config: any = await dbGet('SELECT * FROM risk_configs WHERE user_id = ?', [userId]);
+  let config = await dbGet<{user_id:number;max_risk_pct:number;max_open_positions:number;max_leverage:number;min_confidence:number;target_coins:string}>('SELECT * FROM risk_configs WHERE user_id = ?', [userId]);
   if (!config) {
     config = {
       user_id: userId,
@@ -74,7 +46,7 @@ export async function getOrCreateConfig(userId: number) {
   return config;
 }
 
-export async function processUserCommand(user: any, chatId: string, text: string) {
+export async function processUserCommand(user: AppUser, chatId: string, text: string) {
   const parts = text.split(/\s+/);
   const command = parts[0].toLowerCase();
   const arg = parts.slice(1).join(' ').trim();
@@ -93,7 +65,7 @@ export async function processUserCommand(user: any, chatId: string, text: string
 ⚙️ *İdarəetmə:*
 /aktiv - Botu işə salır (Canlı)
 /dayandir - Botu dayandırır (Pauza)
-/faiz [1-100] - Maksimum risk faizini təyin edir (məsələn: /faiz 5)
+/faiz [0-20] - Maksimum ayırma faizini təyin edir (məsələn: /faiz 5)
 
 🪙 *Koin Seçimi:*
 /koin_auto - Koin seçimini Süni Zəkaya (AUTO) tapşırır
@@ -109,10 +81,10 @@ export async function processUserCommand(user: any, chatId: string, text: string
 
     if (user.binance_api_key && user.binance_api_secret) {
       try {
-        const apiKey = decrypt(user.binance_api_key);
-        const apiSecret = decrypt(user.binance_api_secret);
+        const apiKey = decrypt(user.binance_api_key, `${user.id}:spot:key`);
+        const apiSecret = decrypt(user.binance_api_secret, `${user.id}:spot:secret`);
         balance = await fetchBinanceBalance(apiKey, apiSecret);
-      } catch (err: any) {
+      } catch {
         balanceErr = ' (Binance API xətası)';
       }
     }
@@ -132,7 +104,7 @@ export async function processUserCommand(user: any, chatId: string, text: string
     await sendMessageToUser(user.id, chatId, statusMessage);
   }
   else if (command === '/aktiv') {
-    await dbRun('UPDATE users SET is_active = 1 WHERE id = ?', [user.id]);
+    await dbRun("UPDATE users SET is_active = 1 WHERE id = ? AND subscription_status = 'active'", [user.id]);
     await sendMessageToUser(user.id, chatId, '🟢 KriptoFani ticarət botu uğurla aktivləşdirildi! Yeni ticarət imkanları analiz edilir...');
   }
   else if (command === '/dayandir') {
@@ -146,14 +118,14 @@ export async function processUserCommand(user: any, chatId: string, text: string
     }
 
     const newRiskPct = parseFloat(arg);
-    if (isNaN(newRiskPct) || newRiskPct < 1 || newRiskPct > 100) {
-      await sendMessageToUser(user.id, chatId, '⚠️ Zəhmət olmasa, 1 ilə 100 arasında bir rəqəm daxil edin. Məsələn: /faiz 5');
+    if (isNaN(newRiskPct) || newRiskPct < 0 || newRiskPct > 20) {
+      await sendMessageToUser(user.id, chatId, '⚠️ Zəhmət olmasa, 0 ilə 20 arasında bir rəqəm daxil edin. Məsələn: /faiz 5');
       return;
     }
 
     await getOrCreateConfig(user.id); // Ensure config exists
     await dbRun('UPDATE risk_configs SET max_risk_pct = ? WHERE user_id = ?', [newRiskPct, user.id]);
-    await sendMessageToUser(user.id, chatId, `✅ Hər əməliyyat üçün maksimum risk faizi %${newRiskPct} olaraq təyin edildi.`);
+    await sendMessageToUser(user.id, chatId, `✅ Hər əməliyyat üçün maksimum kapital ayırma faizi %${newRiskPct} olaraq təyin edildi.`);
   }
   else if (command === '/koinler') {
     const config = await getOrCreateConfig(user.id);
@@ -194,7 +166,7 @@ _Süni Zəka seçiminə keçmək üçün:_ \`/koin_auto\``;
     }
 
     const config = await getOrCreateConfig(user.id);
-    let currentCoins = config.target_coins;
+    const currentCoins = config.target_coins;
     let newCoinsList = '';
 
     if (currentCoins === 'AUTO') {

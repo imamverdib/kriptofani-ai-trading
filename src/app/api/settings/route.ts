@@ -1,3 +1,6 @@
+import {errorMessage} from '@/lib/errors';
+import { validateSettings } from '@/lib/trading-math';
+import { initTradingStore } from '@/lib/trading-store';
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbGet, dbRun } from '@/lib/db';
@@ -7,6 +10,7 @@ export async function GET() {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+    await initTradingStore();
     let config = await dbGet('SELECT * FROM risk_configs WHERE user_id = ?', [session.id]);
     if (!config) {
       await dbRun('INSERT INTO risk_configs (user_id) VALUES (?)', [session.id]);
@@ -14,8 +18,8 @@ export async function GET() {
     }
 
     return NextResponse.json({ success: true, config });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }
 
@@ -24,7 +28,9 @@ export async function POST(req: Request) {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const body = await req.json();
+    await initTradingStore();
+    let body;
+    try { body = validateSettings(await req.json()); } catch(e) { return NextResponse.json({error: e instanceof Error ? errorMessage(e) : 'Invalid settings'}, {status:400}); }
 
     if (body.language) {
       await dbRun('UPDATE users SET language = ? WHERE id = ?', [body.language, session.id]);
@@ -48,8 +54,10 @@ export async function POST(req: Request) {
       await dbRun('UPDATE risk_configs SET target_coins = ? WHERE user_id = ?', [targetCoins, session.id]);
     }
 
+    if (body.riskPerTradePct !== undefined) await dbRun('UPDATE risk_configs SET risk_per_trade_pct=? WHERE user_id=?', [body.riskPerTradePct,session.id]);
+    if (body.maxOpenPositions !== undefined) await dbRun('UPDATE risk_configs SET max_open_positions=? WHERE user_id=?', [body.maxOpenPositions,session.id]);
     return NextResponse.json({ success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }

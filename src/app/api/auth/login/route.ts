@@ -1,3 +1,5 @@
+import type {AppUser} from '@/lib/app-types';
+import {errorMessage} from '@/lib/errors';
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { dbGet } from '@/lib/db';
@@ -37,7 +39,7 @@ export async function POST(req: Request) {
       rateData = { count: 0, resetAt: now + BLOCK_DURATION_MS };
     }
 
-    const user: any = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
+    const user = await dbGet<AppUser>('SELECT * FROM users WHERE username = ?', [username]);
     if (!user) {
       rateData.count += 1;
       rateLimit.set(identifier, rateData);
@@ -70,7 +72,7 @@ export async function POST(req: Request) {
     });
 
     return response;
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }

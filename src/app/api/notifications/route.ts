@@ -1,22 +1,24 @@
+
+import { errorMessage } from '@/lib/errors';
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbGet, dbAll, dbRun } from '@/lib/db';
 
-export async function GET(req: Request) {
+export async function GET() {
   try {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const notifications = await dbAll("SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC", [session.id]);
-    const unreadCount: any = await dbGet("SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0", [session.id]);
+    const unreadCount = await dbGet<{count:number}>("SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0", [session.id]);
 
     return NextResponse.json({ success: true, notifications, unreadCount: unreadCount?.count || 0 });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }
 
-export async function POST(req: Request) {
+export async function POST() {
   try {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -25,7 +27,7 @@ export async function POST(req: Request) {
     await dbRun("UPDATE notifications SET is_read = 1 WHERE user_id = ?", [session.id]);
 
     return NextResponse.json({ success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }

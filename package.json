@@ -5,12 +5,19 @@
   "author": "Imamverdi Behbudlu <behbudlu.imamverdi@gmail.com> (https://behbudlu.com)",
   "license": "MIT",
   "scripts": {
-    "dev": "concurrently \"next dev -p 7860\" \"npm run worker\"",
+    "dev": "concurrently --kill-others \"next dev -p 3005\" \"npm run worker\" \"npm run watchdog\"",
     "build": "next build",
-    "start": "next start -p 3005",
+    "start": "node scripts/supervisor.mjs",
     "lint": "eslint",
     "worker": "tsx scripts/worker.ts",
-    "sync:env": "./scripts/sync-env.sh"
+    "sync:env": "./scripts/sync-env.sh",
+    "web": "next start -p 3005",
+    "test": "node scripts/test-runner.mjs",
+    "typecheck": "tsc --noEmit --incremental false",
+    "replay": "tsx scripts/replay.ts",
+    "trading:review": "tsx scripts/trading-review.ts",
+    "watchdog": "tsx scripts/watchdog.ts",
+    "db:backup": "tsx scripts/database-backup.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

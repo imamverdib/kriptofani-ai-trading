@@ -1,21 +1,35 @@
 import sqlite3 from 'sqlite3';
 import path from 'path';
 
-const dbPath = process.env.DB_PATH || path.join(process.cwd(), 'kripto.db');
+export const dbPath = process.env.DB_PATH || path.join(process.cwd(), 'kripto.db');
 
 let db: sqlite3.Database | null = null;
+let initializationError: Error | null = null;
+let initialized: Promise<void>;
+let finishInitialization: () => void;
 
 export function getDb(): sqlite3.Database {
   if (!db) {
+    initialized = new Promise(resolve => { finishInitialization = resolve; });
     db = new sqlite3.Database(dbPath, (err) => {
       if (err) {
-        console.error('Error opening database', err.message);
+        initializationError = err;
+        finishInitialization();
       }
     });
 
+    const rawRun = db.run.bind(db);
+    db.run = function (query: string, ...args: unknown[]) {
+      const callback = typeof args.at(-1) === 'function' ? args.pop() : undefined;
+      return rawRun(query, ...args, function(this: sqlite3.RunResult, err: Error | null) {
+        if (err && !(query.startsWith('ALTER TABLE') && err.message.includes('duplicate column name'))) initializationError = err;
+        if(typeof callback==='function') callback.call(this, err);
+      });
+    } as typeof db.run;
     db.serialize(() => {
       db!.run('PRAGMA journal_mode=WAL');
-      db!.run('PRAGMA synchronous=NORMAL');
+      db!.run('PRAGMA synchronous=FULL');
+      db!.run('PRAGMA busy_timeout=10000');
       db!.run('PRAGMA foreign_keys=ON');
       // Users table
       db!.run(`
@@ -133,10 +147,10 @@ export function getDb(): sqlite3.Database {
       `);
 
       // Auto-migrate missing columns
-      db!.run(`ALTER TABLE users ADD COLUMN last_force_run INTEGER DEFAULT 0`, (err) => {
+      db!.run(`ALTER TABLE users ADD COLUMN last_force_run INTEGER DEFAULT 0`, () => {
         // Ignore error if column exists
       });
-      db!.run(`ALTER TABLE users ADD COLUMN last_reminder_sent_date TEXT`, (err) => {
+      db!.run(`ALTER TABLE users ADD COLUMN last_reminder_sent_date TEXT`, () => {
         // Ignore error if column exists
       });
 
@@ -204,23 +218,25 @@ export function getDb(): sqlite3.Database {
       `);
 
       // Auto-migrate futures_risk_configs columns
-      db!.run(`ALTER TABLE futures_risk_configs ADD COLUMN blacklist_coins TEXT DEFAULT ''`, (err) => {});
-      db!.run(`ALTER TABLE futures_risk_configs ADD COLUMN auto_coin_count INTEGER DEFAULT 7`, (err) => {});
-      // Lower default min_confidence from 80 to 75 for existing configs
-      db!.run(`UPDATE futures_risk_configs SET min_confidence = 75 WHERE min_confidence = 80`, (err) => {});
+      db!.run(`ALTER TABLE futures_risk_configs ADD COLUMN blacklist_coins TEXT DEFAULT ''`, () => {});
+      db!.run(`ALTER TABLE futures_risk_configs ADD COLUMN auto_coin_count INTEGER DEFAULT 7`, () => {});
+
 
       // Futures columns on users
-      db!.run(`ALTER TABLE users ADD COLUMN futures_api_key TEXT`, (err) => {});
-      db!.run(`ALTER TABLE users ADD COLUMN futures_api_secret TEXT`, (err) => {});
-      db!.run(`ALTER TABLE users ADD COLUMN last_futures_force_run INTEGER DEFAULT 0`, (err) => {});
+      db!.run(`ALTER TABLE users ADD COLUMN futures_api_key TEXT`, () => {});
+      db!.run(`ALTER TABLE users ADD COLUMN futures_api_secret TEXT`, () => {});
+      db!.run(`ALTER TABLE users ADD COLUMN last_futures_force_run INTEGER DEFAULT 0`, () => {});
+      db!.run('SELECT 1', () => { db!.run = rawRun as sqlite3.Database['run']; finishInitialization(); });
     });
   }
   return db;
 }
 
 // Helper to run query with Promise
-export function dbRun(query: string, params: any[] = []): Promise<sqlite3.RunResult> {
+export async function dbRun(query: string, params: unknown[] = []): Promise<sqlite3.RunResult> {
   const database = getDb();
+  await initialized;
+  if(initializationError) throw initializationError;
   return new Promise((resolve, reject) => {
     database.run(query, params, function (err) {
       if (err) reject(err);
@@ -230,8 +246,10 @@ export function dbRun(query: string, params: any[] = []): Promise<sqlite3.RunRes
 }
 
 // Helper to get multiple rows
-export function dbAll<T>(query: string, params: any[] = []): Promise<T[]> {
+export async function dbAll<T>(query: string, params: unknown[] = []): Promise<T[]> {
   const database = getDb();
+  await initialized;
+  if(initializationError) throw initializationError;
   return new Promise((resolve, reject) => {
     database.all(query, params, (err, rows) => {
       if (err) reject(err);
@@ -241,8 +259,10 @@ export function dbAll<T>(query: string, params: any[] = []): Promise<T[]> {
 }
 
 // Helper to get single row
-export function dbGet<T>(query: string, params: any[] = []): Promise<T | undefined> {
+export async function dbGet<T>(query: string, params: unknown[] = []): Promise<T | undefined> {
   const database = getDb();
+  await initialized;
+  if(initializationError) throw initializationError;
   return new Promise((resolve, reject) => {
     database.get(query, params, (err, row) => {
       if (err) reject(err);

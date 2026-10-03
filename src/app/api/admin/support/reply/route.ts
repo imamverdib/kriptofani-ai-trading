@@ -1,3 +1,5 @@
+import type {AppUser,Ticket} from '@/lib/app-types';
+import {errorMessage} from '@/lib/errors';
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbGet, dbRun } from '@/lib/db';
@@ -8,14 +10,14 @@ export async function POST(req: Request) {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const me: any = await dbGet("SELECT role FROM users WHERE id = ?", [session.id]);
+    const me = await dbGet<AppUser>("SELECT role FROM users WHERE id = ?", [session.id]);
     if (!me || me.role !== 'admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const { ticketId, reply } = await req.json();
 
-    const ticket: any = await dbGet("SELECT * FROM support_tickets WHERE id = ?", [ticketId]);
+    const ticket = await dbGet<Ticket>("SELECT * FROM support_tickets WHERE id = ?", [ticketId]);
     if (!ticket) return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
 
     await dbRun("UPDATE support_tickets SET status = 'answered', admin_reply = ? WHERE id = ?", [reply, ticketId]);
@@ -28,13 +30,13 @@ export async function POST(req: Request) {
     ]);
 
     // Send telegram
-    const user: any = await dbGet("SELECT telegram_chat_id FROM users WHERE id = ?", [ticket.user_id]);
+    const user = await dbGet<AppUser>("SELECT telegram_chat_id FROM users WHERE id = ?", [ticket.user_id]);
     if (user && user.telegram_chat_id) {
         await sendMessageToUser(ticket.user_id, user.telegram_chat_id, `📩 *Dəstək Sorğunuza Cavab:*\n\n${reply}\n\n_Əlavə sualınız olarsa panelin Dəstək bölməsindən yenidən yaza bilərsiniz._`);
     }
 
     return NextResponse.json({ success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }

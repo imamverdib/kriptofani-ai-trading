@@ -1,3 +1,5 @@
+import type {AppUser} from '@/lib/app-types';
+import {errorMessage} from '@/lib/errors';
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbGet, dbAll } from '@/lib/db';
@@ -7,7 +9,7 @@ export async function GET(req: Request) {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const me: any = await dbGet("SELECT role FROM users WHERE id = ?", [session.id]);
+    const me = await dbGet<AppUser>("SELECT role FROM users WHERE id = ?", [session.id]);
     if (!me || me.role !== 'admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -44,7 +46,7 @@ export async function GET(req: Request) {
     }
 
     return NextResponse.json({ error: 'Invalid type' }, { status: 400 });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }

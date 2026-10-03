@@ -1,3 +1,5 @@
+import type {AppUser} from '@/lib/app-types';
+import {errorMessage} from '@/lib/errors';
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbGet } from '@/lib/db';
@@ -15,7 +17,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const user: any = await dbGet('SELECT role FROM users WHERE id = ?', [session.id]);
+    const user = await dbGet<AppUser>('SELECT role FROM users WHERE id = ?', [session.id]);
     if (!user || user.role !== 'admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -43,9 +45,9 @@ export async function GET(req: Request) {
     }
 
     return NextResponse.json({ success: true, logs });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Logs API error:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }
 
@@ -56,7 +58,7 @@ export async function DELETE() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const user: any = await dbGet('SELECT role FROM users WHERE id = ?', [session.id]);
+    const user = await dbGet<AppUser>('SELECT role FROM users WHERE id = ?', [session.id]);
     if (!user || user.role !== 'admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
@@ -66,8 +68,8 @@ export async function DELETE() {
     }
 
     return NextResponse.json({ success: true, message: 'Loglar təmizləndi' });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Logs DELETE API error:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }

@@ -1,12 +1,13 @@
 'use client';
+import type { FuturesTradeView } from '@/lib/view-types';
 
 import { useState, useEffect } from 'react';
-import { History, TrendingUp, TrendingDown, Clock, Zap, ChevronDown, ChevronUp, Target } from 'lucide-react';
+import { TrendingUp, TrendingDown, Clock, Zap, ChevronDown, ChevronUp, Target } from 'lucide-react';
 
 export default function FuturesHistoryPage() {
-  const [trades, setTrades] = useState<any[]>([]);
+  const [trades, setTrades] = useState<FuturesTradeView[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expandedTrade, setExpandedTrade] = useState<number | null>(null);
+  const [expandedTrade, setExpandedTrade] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/futures/trades')
@@ -167,7 +168,7 @@ export default function FuturesHistoryPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {trade.partialFills.map((fill: any, idx: number) => (
+                            {trade.partialFills.map((fill, idx) => (
                               <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                                 <td style={{ padding: '8px' }}>TP{fill.tp_level}</td>
                                 <td style={{ padding: '8px' }}>{fill.quantity}</td>
