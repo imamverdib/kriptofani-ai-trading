@@ -9,7 +9,8 @@
     "build": "next build",
     "start": "next start -p 3005",
     "lint": "eslint",
-    "worker": "tsx scripts/worker.ts"
+    "worker": "tsx scripts/worker.ts",
+    "sync:env": "./scripts/sync-env.sh"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
