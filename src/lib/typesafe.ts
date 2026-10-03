@@ -1,5 +1,3 @@
-import fetch from 'node-fetch';
-
 export interface TypeSafeDecision {
   action: 'LONG' | 'SHORT' | 'WAIT';
   confidence: number; // 0 to 100
@@ -67,7 +65,7 @@ export async function evaluateWithJev(marketState: string): Promise<TypeSafeDeci
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(requestBody),
-      signal: controller.signal as any
+      signal: controller.signal
     });
 
     clearTimeout(timeout);

@@ -1,7 +1,6 @@
 import crypto from 'crypto';
 import { dbRun, dbGet, dbAll } from './db';
 import { GoogleGenerativeAI, Schema, SchemaType } from '@google/generative-ai';
-import fetch from 'node-fetch';
 import { decrypt } from './encryption';
 import { getExchangeInfo, formatQuantity, formatPrice, placeMarketOrder, placeOCOOrder } from './binance';
 import { rsi, sma } from 'technicalindicators';
@@ -131,7 +130,7 @@ export async function runTradingEngine(targetUserId?: number) {
         targetSymbols = userTargetConfig.split(',');
       }
 
-      let hourlyHoldSummaries: string[] = [];
+      const hourlyHoldSummaries: string[] = [];
       for (const symbol of targetSymbols) {
         try {
           const coin = { symbol };
@@ -320,7 +319,6 @@ export async function runTradingEngine(targetUserId?: number) {
             quantity = formatQuantity(quantity, parseFloat(lotFilter.stepSize));
             const tpPrice = formatPrice(decision.risk_plan.take_profit_price, parseFloat(priceFilter.tickSize));
             const slTrigger = formatPrice(decision.risk_plan.stop_loss_price, parseFloat(priceFilter.tickSize));
-            const slLimit = formatPrice(slTrigger * 0.998, parseFloat(priceFilter.tickSize));
 
             if (quantity >= parseFloat(lotFilter.minQty)) {
               let profit = 0;
@@ -332,7 +330,7 @@ export async function runTradingEngine(targetUserId?: number) {
               }
               
               // 1. Place Market Entry Order
-              const entryOrder = await placeMarketOrder(apiKey, apiSecret, coin.symbol, action, quantity);
+              await placeMarketOrder(apiKey, apiSecret, coin.symbol, action, quantity);
               
               // 2. Place OCO Order with 3 Retries & Emergency Orphan Position Protection
               if (action === 'BUY') {
