@@ -3,6 +3,8 @@ import { GoogleGenerativeAI, Schema, SchemaType } from '@google/generative-ai';
 import { decrypt } from './encryption';
 import { sendMessageToUser } from './telegram';
 import { rsi, sma, macd } from 'technicalindicators';
+import { isTypeSafeConfigured, evaluateWithJev } from './typesafe';
+import { computeQuantPlan } from './quant-math';
 import {
   getFuturesKlines,
   getFuturesBalance,
@@ -320,9 +322,72 @@ export async function runFuturesAnalysis(targetUserId?: number) {
           }
 
           // ──────────────────────────────────────────────────────────
-          // FASE 3: AI Decision
+          // FASE 3: AI Decision (TypeSafe Jev System-1 or Gemini Fallback)
           // ──────────────────────────────────────────────────────────
-          const prompt = `
+          let decision: any = null;
+          let quantPlan: any = null;
+
+          if (isTypeSafeConfigured()) {
+            console.log(`[FUTURES][${symbol}] Evaluating with TypeSafe AI (Jev System-1)...`);
+            const marketState = `
+              Symbol: ${symbol}
+              Current Price: ${currentPrice}
+              Trend Direction (4H): ${trendDirection}
+              RSI (15m): ${rsi15m[rsi15m.length - 1]?.toFixed(2) || 'N/A'}
+              RSI (4H): ${rsi4h[rsi4h.length - 1]?.toFixed(2) || 'N/A'}
+              MACD Divergence (15m): ${divergence15m}
+              MACD Divergence (4H): ${divergence4h}
+              Volume Spike (15m): ${volume15m.isSpike}
+              Key Supports: ${sr4h.supports.join(', ') || 'None'}
+              Key Resistances: ${sr4h.resistances.join(', ') || 'None'}
+              Available USDT: ${availableUsdt}
+              Leverage: ${riskConfig.leverage || 5}x
+            `;
+            const jev = await evaluateWithJev(marketState);
+            if (jev) {
+              if (jev.isHighRisk) {
+                console.log(`[FUTURES][${symbol}] TypeSafe Jev flagged high false breakout risk. Skipping.`);
+                holdSummaries.push(`*${symbol}*: Jev yalançı qırılma riski (False Breakout) aşkarladı`);
+                continue;
+              }
+
+              if (jev.action === 'LONG' || jev.action === 'SHORT') {
+                const klinesForPlan = klines15m.map(k => ({ high: k.high, low: k.low, close: k.close }));
+                quantPlan = computeQuantPlan(jev.action, currentPrice, klinesForPlan, sr4h.supports, sr4h.resistances);
+                const leverage = riskConfig.leverage || 5;
+                const maxRiskUsd = availableUsdt * ((riskConfig.max_risk_pct || 2) / 100);
+
+                decision = {
+                  action: jev.action,
+                  confidence: jev.confidence,
+                  reason_summary: `TypeSafe Jev System-1 (${jev.latencyMs}ms, Güvən: ${jev.confidence}%, Trend: ${jev.trendStrength})`,
+                  risk_plan: {
+                    entry_price: quantPlan.entryPrice,
+                    stop_loss_price: quantPlan.stopLossPrice,
+                    take_profit_1: quantPlan.takeProfit1,
+                    take_profit_2: quantPlan.takeProfit2,
+                    take_profit_3: quantPlan.takeProfit3,
+                    position_size_usd: maxRiskUsd,
+                  },
+                  engine: 'TYPESAFE',
+                  latencyMs: jev.latencyMs,
+                  trendStrength: jev.trendStrength,
+                  quantPlan,
+                };
+              } else {
+                decision = {
+                  action: 'WAIT',
+                  confidence: jev.confidence,
+                  reason_summary: `TypeSafe Jev gözləmə qərarı (${jev.latencyMs}ms, Conf: ${jev.confidence}%)`,
+                  engine: 'TYPESAFE',
+                  latencyMs: jev.latencyMs,
+                };
+              }
+            }
+          }
+
+          if (!decision) {
+            const prompt = `
 System: You are a disciplined Binance FUTURES day trader. Follow the rules below.
 
 ═══ TRADING RULES ═══
@@ -392,15 +457,18 @@ If LONG/SHORT: provide entry_price (near current price), stop_loss_price, take_p
 If WAIT: explain briefly why no setup meets the rules.
 `;
 
-          const model = genAI.getGenerativeModel({
-            model: 'gemini-2.5-flash',
-            generationConfig: {
-              responseMimeType: 'application/json',
-              responseSchema: futuresDecisionSchema,
-            },
-          });
+            const model = genAI.getGenerativeModel({
+              model: 'gemini-2.5-flash',
+              generationConfig: {
+                responseMimeType: 'application/json',
+                responseSchema: futuresDecisionSchema,
+              },
+            });
 
-          const decision = await callGeminiFuturesWithRetry(model, prompt);
+            decision = await callGeminiFuturesWithRetry(model, prompt);
+            if (decision) decision.engine = 'GEMINI';
+          }
+
           console.log(`[FUTURES][${symbol}] AI Decision:`, decision);
 
           if (!decision || typeof decision !== 'object' || !decision.action) {
@@ -628,22 +696,38 @@ If WAIT: explain briefly why no setup meets the rules.
             );
 
             // Send notification
-            await sendMessageToUser(user.id, user.telegram_chat_id,
-              `⚡ *Futures Ticarət Açıldı*\n\n` +
-              `📊 *${symbol}* — ${action}\n` +
-              `💰 Giriş: $${currentPrice}\n` +
-              `🔴 Stop Loss: $${formattedSL}\n` +
-              `🟢 TP1 (1:2): $${formattedTP1} — 50%\n` +
-              `🟢 TP2 (1:3): $${formattedTP2} — 25%\n` +
-              `🟢 TP3 (1:4): $${formattedTP3} — 25%\n` +
-              `📐 Leverage: ${leverage}x\n` +
-              `📏 Miqdar: ${quantity}\n\n` +
-              `📝 Səbəb: ${decision.reason_summary}`);
+            if (decision.engine === 'TYPESAFE') {
+              await sendMessageToUser(
+                user.id,
+                user.telegram_chat_id,
+                `⚡ *TYPE-SAFE EXECUTION (FUTURES)*\n\n` +
+                `📊 *${symbol}* — *${action}*\n` +
+                `💰 Giriş: $${currentPrice} | Lev: ${leverage}x\n` +
+                `🛑 Stop Loss: $${formattedSL} (-${decision.quantPlan?.riskPercent || '1.0'}%)\n` +
+                `🎯 TP1 (50%): $${formattedTP1} (+${decision.quantPlan?.rewardPercent || '2.0'}%)\n` +
+                `🎯 TP2 (25%): $${formattedTP2}\n` +
+                `🎯 TP3 (25%): $${formattedTP3}\n` +
+                `📏 Miqdar: ${quantity}\n` +
+                `⚡ Latency: ${decision.latencyMs}ms | Güvən: ${confidence}%`
+              );
+            } else {
+              await sendMessageToUser(
+                user.id,
+                user.telegram_chat_id,
+                `⚡ *Futures Ticarət Açıldı*\n\n` +
+                `📊 *${symbol}* — ${action}\n` +
+                `💰 Giriş: $${currentPrice} | Lev: ${leverage}x\n` +
+                `🔴 Stop Loss: $${formattedSL}\n` +
+                `🟢 TP1: $${formattedTP1} | TP2: $${formattedTP2} | TP3: $${formattedTP3}\n` +
+                `📏 Miqdar: ${quantity}\n` +
+                `📝 Səbəb: ${decision.reason_summary}`
+              );
+            }
 
           } else {
             if (targetUserId) {
               await sendMessageToUser(user.id, user.telegram_chat_id,
-                `⚡ *Futures Analiz*\nKoin: ${symbol}\nQərar: Gözləmə (WAIT)\nSəbəb: ${decision.reason_summary}`);
+                `⚡ *Futures Analiz*\nKoin: ${symbol}\nQərar: WAIT\nSəbəb: ${decision.reason_summary}`);
             } else {
               holdSummaries.push(`*${symbol}*: ${decision.reason_summary}`);
             }

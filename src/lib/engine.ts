@@ -6,6 +6,8 @@ import { decrypt } from './encryption';
 import { getExchangeInfo, formatQuantity, formatPrice, placeMarketOrder, placeOCOOrder } from './binance';
 import { rsi, sma } from 'technicalindicators';
 import { sendMessageToUser } from './telegram';
+import { isTypeSafeConfigured, evaluateWithJev } from './typesafe';
+import { computeQuantPlan } from './quant-math';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
@@ -38,7 +40,11 @@ async function getKlines(symbol: string) {
   if (!res.ok) return null;
   const data: any = await res.json();
   return data.map((k: any) => ({
-    close: parseFloat(k[4])
+    open: parseFloat(k[1]),
+    high: parseFloat(k[2]),
+    low: parseFloat(k[3]),
+    close: parseFloat(k[4]),
+    volume: parseFloat(k[5]),
   }));
 }
 
@@ -154,32 +160,95 @@ export async function runTradingEngine(targetUserId?: number) {
             continue;
           }
 
-          const prompt = `
-            System: You are an autonomous quantitative crypto trader.
-            Data for ${coin.symbol}:
-            - Current Price: ${currentPrice}
-            - RSI (14h): ${currentRSI.toFixed(2)}
-            - SMA (20h): ${currentSMA.toFixed(2)}
-            
-            Portfolio:
-            - Available USDT: ${availableUsdt}
-            - Sellable Asset (${coin.symbol.replace('USDT', '')}): ${sellableAssetBalance}
-            - Max Risk Pct: ${riskConfig?.max_risk_pct || 2}%
-            
-            Decision Logic:
-            - Provide highly logical BUY or SELL decisions if an opportunity exists (RSI overbought/oversold, SMA crosses, etc). Otherwise HOLD.
-            - If BUY, suggest position_size_usd, stop_loss_price, and take_profit_price.
-          `;
+          let decision: any = null;
+          let quantPlan: any = null;
 
-          const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.5-flash",
-            generationConfig: {
-              responseMimeType: "application/json",
-              responseSchema: decisionSchema,
+          if (isTypeSafeConfigured()) {
+            console.log(`[${coin.symbol}] Evaluating with TypeSafe AI (Jev System-1)...`);
+            const marketState = `
+              Symbol: ${coin.symbol}
+              Current Price: ${currentPrice}
+              RSI (14h): ${currentRSI.toFixed(2)}
+              SMA (20h): ${currentSMA.toFixed(2)}
+              Available USDT: ${availableUsdt}
+              Sellable Balance: ${sellableAssetBalance}
+            `;
+            const jev = await evaluateWithJev(marketState);
+            if (jev) {
+              if (jev.isHighRisk) {
+                console.log(`[${coin.symbol}] TypeSafe Jev flagged high false breakout risk. Skipping.`);
+                hourlyHoldSummaries.push(`*${coin.symbol}*: Jev yalançı qırılma riski (False Breakout) aşkarladı`);
+                continue;
+              }
+
+              let action: 'BUY' | 'SELL' | 'HOLD' = 'HOLD';
+              if (jev.action === 'LONG') {
+                action = 'BUY';
+              } else if (jev.action === 'SHORT' && sellableAssetBalance > 0) {
+                action = 'SELL';
+              }
+
+              if (action !== 'HOLD') {
+                const supports = klines.map((k: any) => k.low).filter((l: number) => l < currentPrice).sort((a: number, b: number) => b - a).slice(0, 3);
+                const resistances = klines.map((k: any) => k.high).filter((h: number) => h > currentPrice).sort((a: number, b: number) => a - b).slice(0, 3);
+                quantPlan = computeQuantPlan(action, currentPrice, klines, supports, resistances);
+
+                decision = {
+                  action,
+                  confidence: jev.confidence,
+                  reason_summary: `TypeSafe Jev (${jev.latencyMs}ms, Güvən: ${jev.confidence}%, Trend: ${jev.trendStrength})`,
+                  risk_plan: {
+                    position_size_usd: availableUsdt * ((riskConfig?.max_risk_pct || 2) / 100),
+                    stop_loss_price: quantPlan.stopLossPrice,
+                    take_profit_price: quantPlan.takeProfit1
+                  },
+                  engine: 'TYPESAFE',
+                  latencyMs: jev.latencyMs,
+                  trendStrength: jev.trendStrength
+                };
+              } else {
+                decision = {
+                  action: 'HOLD',
+                  confidence: jev.confidence,
+                  reason_summary: `TypeSafe Jev gözləmə qərarı (${jev.latencyMs}ms, Conf: ${jev.confidence}%)`,
+                  engine: 'TYPESAFE',
+                  latencyMs: jev.latencyMs
+                };
+              }
             }
-          });
-          
-          const decision = await callGeminiWithRetry(model, prompt);
+          }
+
+          // Fallback to Gemini if TypeSafe is not configured or failed
+          if (!decision) {
+            const prompt = `
+              System: You are an autonomous quantitative crypto trader.
+              Data for ${coin.symbol}:
+              - Current Price: ${currentPrice}
+              - RSI (14h): ${currentRSI.toFixed(2)}
+              - SMA (20h): ${currentSMA.toFixed(2)}
+              
+              Portfolio:
+              - Available USDT: ${availableUsdt}
+              - Sellable Asset (${coin.symbol.replace('USDT', '')}): ${sellableAssetBalance}
+              - Max Risk Pct: ${riskConfig?.max_risk_pct || 2}%
+              
+              Decision Logic:
+              - Provide highly logical BUY or SELL decisions if an opportunity exists (RSI overbought/oversold, SMA crosses, etc). Otherwise HOLD.
+              - If BUY, suggest position_size_usd, stop_loss_price, and take_profit_price.
+            `;
+
+            const model = genAI.getGenerativeModel({ 
+              model: "gemini-2.5-flash",
+              generationConfig: {
+                responseMimeType: "application/json",
+                responseSchema: decisionSchema,
+              }
+            });
+            
+            decision = await callGeminiWithRetry(model, prompt);
+            if (decision) decision.engine = 'GEMINI';
+          }
+
           console.log(`[${coin.symbol}] AI Decision:`, decision);
 
           if (!decision || typeof decision !== 'object' || !decision.action) {
@@ -319,13 +388,35 @@ export async function runTradingEngine(targetUserId?: number) {
                 [user.id, coin.symbol, action, currentPrice, quantity, 'EXECUTED', dedupeKey, profit]
               );
 
-              await sendMessageToUser(user.id, user.telegram_chat_id, 
-                `✅ *Avtomatik Ticarət*\n\nNöv: ${action}\nKoin: ${coin.symbol}\nMiqdar: ${quantity}\nQiymət: ${currentPrice}\n\nQərar səbəbi: ${decision.reason_summary}`
-              );
+              if (decision.engine === 'TYPESAFE') {
+                await sendMessageToUser(
+                  user.id,
+                  user.telegram_chat_id,
+                  `⚡ *TYPE-SAFE EXECUTION (SPOT)*\n\n` +
+                  `Koin: *${coin.symbol}* | Növ: *${action}*\n` +
+                  `💰 Qiymət: $${currentPrice}\n` +
+                  `🛑 Stop-Loss: $${slTrigger} (-${quantPlan?.riskPercent || '1.0'}%)\n` +
+                  `🎯 Take-Profit: $${tpPrice} (+${quantPlan?.rewardPercent || '2.0'}%)\n` +
+                  `📦 Miqdar: ${quantity}\n` +
+                  `⚡ Latency: ${decision.latencyMs}ms | Güvən: ${confidence}%`
+                );
+              } else {
+                await sendMessageToUser(
+                  user.id,
+                  user.telegram_chat_id,
+                  `✅ *Spot Ticarət İcra Olundu*\n\n` +
+                  `Koin: *${coin.symbol}* | Növ: *${action}*\n` +
+                  `💰 Qiymət: $${currentPrice}\n` +
+                  `🛑 Stop-Loss: $${slTrigger}\n` +
+                  `🎯 Take-Profit: $${tpPrice}\n` +
+                  `📦 Miqdar: ${quantity}\n` +
+                  `📝 Səbəb: ${decision.reason_summary}`
+                );
+              }
             }
           } else {
             if (targetUserId) {
-              await sendMessageToUser(user.id, user.telegram_chat_id, `ℹ️ *Analiz Nəticəsi*\nKoin: ${coin.symbol}\nQərar: Gözləmə (HOLD)\nSəbəb: ${decision.reason_summary}`);
+              await sendMessageToUser(user.id, user.telegram_chat_id, `ℹ️ *Analiz Nəticəsi*\nKoin: ${coin.symbol}\nQərar: HOLD\nSəbəb: ${decision.reason_summary}`);
             } else {
               hourlyHoldSummaries.push(`*${coin.symbol}*: ${decision.reason_summary}`);
             }
