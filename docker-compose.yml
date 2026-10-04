@@ -4,6 +4,7 @@ services:
   kripto-app:
     build: .
     container_name: kripto-app
+    hostname: kripto-app
     restart: unless-stopped
     ports:
       - "3005:3005" # Expose the Next.js port
