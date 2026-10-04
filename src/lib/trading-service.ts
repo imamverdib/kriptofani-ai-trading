@@ -75,7 +75,8 @@ async function syncExternalFlows(userId:number,uid:string,c:Credentials,includeF
  if(now-cursor.synced_until>89*86400000)throw new Error('External flow history requires reviewed backfill');
  for(const kind of ['deposit','withdraw']){
   for(let offset=0;offset<100000;offset+=1000){
-   const rows=await exchange<Cashflow[]>('spot',`/sapi/v1/capital/${kind}/hisrec`,{startTime,endTime:now,limit:1000,offset,status:kind==='deposit'?1:6},c,'GET',{priority:true,weight:10});
+   const endpoint=kind==='deposit'?'/sapi/v1/capital/deposit/hisrec':'/sapi/v1/capital/withdraw/history';
+   const rows=await exchange<Cashflow[]>('spot',endpoint,{startTime,endTime:now,limit:1000,offset,status:kind==='deposit'?1:6},c,'GET',{priority:true,weight:10});
    await transaction(async sql=>{for(const r of rows){
     if(r.coin!=='USDT')throw new Error('Non-USDT external cashflow requires historical valuation');
     const time=kind==='deposit'?Number(r.insertTime):utcTime(r.applyTime);const value=positive(r.amount,'cashflow');

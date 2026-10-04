@@ -19,15 +19,16 @@ export async function walletTransfers(c:Credentials,startTime:number,endTime:num
  for(const [type,edge] of Object.entries(edges)){
   if(!includeFutures&&!edge.includes('MAIN'))continue;
   for(let current=1;current<=1000;current++){
-   const page=await exchange<{rows:Transfer[];total:number}>('spot','/sapi/v1/asset/transfer',{type,startTime,endTime,current,size:100},c,'GET',{priority:true,weight:1});
-   if(!Array.isArray(page.rows)||!Number.isInteger(page.total)||page.total<0)throw new Error('Invalid transfer history response');
-   if(page.rows.length!==Math.min(100,Math.max(0,page.total-(current-1)*100)))throw new Error('Transfer history page is incomplete');
-   for(const row of page.rows){
+   const page=await exchange<{rows?:Transfer[];total:number}>('spot','/sapi/v1/asset/transfer',{type,startTime,endTime,current,size:100},c,'GET',{priority:true,weight:1});
+   const rows=Array.isArray(page.rows)?page.rows:[];
+   if(!Number.isInteger(page.total)||page.total<0)throw new Error('Invalid transfer history response');
+   if(rows.length!==Math.min(100,Math.max(0,page.total-(current-1)*100)))throw new Error('Transfer history page is incomplete');
+   for(const row of rows){
     if(row.type!==type||row.timestamp<startTime||row.timestamp>endTime)throw new Error('Transfer history range/type mismatch');
     const amount=transferFlow(row,includeFutures);if(amount!==0)result.push({ref:`${type}:${row.tranId}`,time:row.timestamp,amount});
    }
    if(current*100>=page.total)break;
-   if(page.rows.length<100||current===1000)throw new Error('Transfer history pagination incomplete');
+   if(rows.length<100||current===1000)throw new Error('Transfer history pagination incomplete');
   }
  }
  return result;
