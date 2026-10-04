@@ -23,6 +23,7 @@ export default function SettingsPage() {
   const [telegramStatus, setTelegramStatus] = useState<boolean>(false);
   const [telegramCommand, setTelegramCommand] = useState('');
   const [disconnecting, setDisconnecting] = useState(false);
+  const [activatingTelegram, setActivatingTelegram] = useState(false);
 
   // Futures API state
   const [futuresApiKey, setFuturesApiKey] = useState('');
@@ -173,6 +174,49 @@ export default function SettingsPage() {
       setError('Sistem xətası');
     } finally {
       setDisconnecting(false);
+    }
+  };
+
+  const handleActivateTelegram = async () => {
+    setActivatingTelegram(true);
+    setError('');
+    setSuccess('');
+    try {
+      const res = await fetch('/api/settings/telegram/link', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Telegram bağlama kodu alınmadı');
+      
+      const token = data.command.replace('/start ', '').trim();
+      const botUrl = `https://t.me/ib_kripto_bot?start=${token}`;
+      
+      window.open(botUrl, '_blank');
+      setTelegramCommand(data.command);
+      setSuccess('Telegram bot açıldı. Açılan çatda "START" düyməsinə basın.');
+
+      let attempts = 0;
+      const timer = setInterval(async () => {
+        attempts++;
+        if (attempts > 30) {
+          clearInterval(timer);
+          return;
+        }
+        try {
+          const meRes = await fetch('/api/auth/me');
+          const meData = await meRes.json();
+          if (meData.user?.telegram_chat_id) {
+            setTelegramStatus(true);
+            if (meData.user.telegram_username) {
+              setTelegramUsername(meData.user.telegram_username);
+            }
+            setSuccess('Telegram botu uğurla əlaqələndirildi!');
+            clearInterval(timer);
+          }
+        } catch {}
+      }, 2000);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setActivatingTelegram(false);
     }
   };
 
@@ -340,10 +384,6 @@ export default function SettingsPage() {
       </div>
 
       {/* Telegram Bot Panel */}
-      <div className="glass-panel" style={{padding:24,marginTop:24}}>
-        <button className="btn btn-primary" onClick={async()=>{try{const r=await fetch('/api/settings/telegram/link',{method:'POST'});const d=await r.json();if(!r.ok)throw new Error(d.error);setTelegramCommand(d.command)}catch{setError('Telegram bağlama kodu alınmadı')}}}>Telegram bağlama kodu yaradın</button>
-        {telegramCommand && <p>Bu əmri botun şəxsi çatına göndərin (10 dəqiqə etibarlıdır): <code style={{overflowWrap:'anywhere'}}>{telegramCommand}</code></p>}
-      </div>
       <div className="glass-panel" style={{ padding: '32px', marginTop: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '24px' }}>
           <MessageCircle size={20} className="text-gradient" />
@@ -356,7 +396,9 @@ export default function SettingsPage() {
               <CheckCircle size={24} className="text-success" />
               <div>
                 <strong style={{ display: 'block', color: 'var(--success)' }}>{t.settings.tgActive}</strong>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{t.settings.tgActiveDesc}</span>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  {telegramUsername ? `@${telegramUsername} ilə əlaqələndirilib` : t.settings.tgActiveDesc}
+                </span>
               </div>
             </div>
             <button 
@@ -369,23 +411,34 @@ export default function SettingsPage() {
             </button>
           </div>
         ) : (
-          <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--danger)', padding: '20px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <XCircle size={24} className="text-danger" />
-              <div>
-                <strong style={{ display: 'block', color: 'var(--danger)' }}>{t.settings.tgDeactive}</strong>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{t.settings.tgDeactiveDesc}</span>
+          <div>
+            <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--danger)', padding: '20px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <XCircle size={24} className="text-danger" />
+                <div>
+                  <strong style={{ display: 'block', color: 'var(--danger)' }}>{t.settings.tgDeactive}</strong>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{t.settings.tgDeactiveDesc}</span>
+                </div>
               </div>
+              <button 
+                onClick={handleActivateTelegram}
+                disabled={activatingTelegram}
+                className="btn btn-primary" 
+                style={{ padding: '10px 20px', cursor: activatingTelegram ? 'not-allowed' : 'pointer' }}
+              >
+                {activatingTelegram ? 'Telegram açılır...' : t.settings.tgActivate}
+              </button>
             </div>
-            <a 
-              href="https://t.me/kriptofaniapp_bot" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="btn btn-primary" 
-              style={{ padding: '10px 16px', textDecoration: 'none' }}
-            >
-              {t.settings.tgActivate}
-            </a>
+            {telegramCommand && (
+              <div style={{ marginTop: '14px', padding: '12px 16px', background: 'rgba(255, 255, 255, 0.04)', borderRadius: '8px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                <span>Əgər bot avtomatik başlamasa, Telegram-da <strong>@ib_kripto_bot</strong>-a bu əmri göndərin:</span>
+                <div style={{ marginTop: '6px' }}>
+                  <code style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '4px 8px', borderRadius: '4px', color: '#10b981', overflowWrap: 'anywhere' }}>
+                    {telegramCommand}
+                  </code>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

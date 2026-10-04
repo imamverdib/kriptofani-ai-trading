@@ -27,6 +27,7 @@ export async function POST(req:Request){
   const text=String(message.text||'').trim(),telegramId=String(message.from.id);
   const token=/^\/start ([a-f0-9]{48})$/.exec(text);
   if(token){
+   let paired=false;
    await transaction(async sql=>{
     const link=await sql.get('SELECT * FROM telegram_links WHERE hash=? AND expires_at>?',[createHash('sha256').update(token[1]).digest('hex'),Date.now()]);if(!link)return;
     const existing=await sql.get('SELECT user_id FROM telegram_identities WHERE telegram_id=?',[telegramId]);if(existing&&existing.user_id!==link.user_id)throw new Error('Telegram identity already linked');
@@ -35,10 +36,28 @@ export async function POST(req:Request){
     await sql.run('UPDATE users SET telegram_chat_id=?,telegram_username=? WHERE id=?',[telegramId,message.from.username||null,link.user_id]);
     await sql.run('DELETE FROM telegram_links WHERE user_id=?',[link.user_id]);
     await sql.run('INSERT INTO notification_outbox(user_id,chat_id,text) VALUES (?,?,?)',[link.user_id,telegramId,'Telegram hesabınız təhlükəsiz bağlandı.']);
-   });return NextResponse.json({ok:true});
+    paired=true;
+   });
+   if(paired&&process.env.TELEGRAM_BOT_TOKEN){
+    await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`,{
+     method:'POST',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({chat_id:telegramId,text:'✅ Telegram hesabınız kripto ticarət panelinizlə uğurla əlaqələndirildi! Ticarət siqnalları və bildirişlər bura göndəriləcək.'})
+    }).catch(()=>{});
+   }
+   return NextResponse.json({ok:true});
   }
   const identity=await read(sql=>sql.get<AppUser>('SELECT u.* FROM telegram_identities t JOIN users u ON u.id=t.user_id WHERE t.telegram_id=?',[telegramId]));
-  if(!identity)return NextResponse.json({ok:true});
+  if(!identity){
+   if(process.env.TELEGRAM_BOT_TOKEN&&(text.startsWith('/start')||text.toLowerCase()==='salam'||text.toLowerCase()==='help')){
+    await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`,{
+     method:'POST',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({chat_id:telegramId,text:'Salam! Bu botu veb tətbiqinizlə əlaqələndirmək üçün zəhmət olmasa veb panelə (Tənzimləmələr / Dashboard) daxil olub "Telegram-da Aktiv Et" düyməsinə klikləyin.'})
+    }).catch(()=>{});
+   }
+   return NextResponse.json({ok:true});
+  }
   const claimed=await transaction(sql=>sql.run('INSERT OR IGNORE INTO telegram_updates VALUES (?,?)',[body.update_id,Date.now()]));
   if(claimed.changes&&text)await processUserCommand(identity,telegramId,text);
   return NextResponse.json({ok:true});

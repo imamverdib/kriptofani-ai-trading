@@ -192,7 +192,7 @@ export default function Setup() {
               Your Binance API connection is configured securely. To receive instant trade execution signals, start the Telegram bot by sending <strong>/start</strong>.
             </p>
             
-            <a href="https://t.me/kriptofani_bot" target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ width: '100%', marginBottom: '16px', padding: '14px' }}>
+            <a href="https://t.me/ib_kripto_bot" target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ width: '100%', marginBottom: '16px', padding: '14px' }}>
               Launch Telegram Signal Bot
             </a>
 

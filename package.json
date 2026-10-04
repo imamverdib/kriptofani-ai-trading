@@ -19,7 +19,8 @@
     "watchdog": "tsx scripts/watchdog.ts",
     "db:backup": "tsx scripts/database-backup.ts",
     "accounts": "tsx scripts/accounts.ts",
-    "test:two-accounts:http": "node scripts/two-account-http-smoke.mjs"
+    "test:two-accounts:http": "node scripts/two-account-http-smoke.mjs",
+    "setup:telegram": "tsx scripts/setup-telegram-webhook.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
