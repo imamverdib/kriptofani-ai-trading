@@ -57,6 +57,9 @@ export async function POST(req: Request) {
     }
     if (isFuturesActive !== undefined) {
       await dbRun('UPDATE futures_risk_configs SET is_futures_active = ? WHERE user_id = ?', [isFuturesActive ? 1 : 0, session.id]);
+      if (isFuturesActive) {
+        await dbRun('UPDATE users SET is_active = 1 WHERE id = ?', [session.id]);
+      }
     }
     if (blacklistCoins !== undefined) {
       await dbRun('UPDATE futures_risk_configs SET blacklist_coins = ? WHERE user_id = ?', [blacklistCoins, session.id]);
