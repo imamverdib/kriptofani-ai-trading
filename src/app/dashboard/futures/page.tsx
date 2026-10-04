@@ -58,7 +58,7 @@ export default function FuturesDashboard() {
     const calculateTimeRemaining = () => {
       const now = new Date();
       const minutes = now.getMinutes();
-      const nextQuarter = Math.ceil((minutes + 1) / 30) * 30;
+      const nextQuarter = Math.ceil((minutes + 1) / 15) * 15;
       const next = new Date(now);
       next.setMinutes(nextQuarter, 0, 0);
       if (nextQuarter >= 60) {
