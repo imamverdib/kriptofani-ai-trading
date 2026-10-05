@@ -1,8 +1,8 @@
 export const dictionaries = {
   az: {
     sidebar: {
-      panel: 'Panel',
-      history: 'Əməliyyat Tarixçəsi',
+      panel: 'Spot Panel',
+      history: 'Spot Tarixçəsi',
       support: 'Dəstək',
       notifications: 'Bildirişlər',
       settings: 'Tənzimləmələr',
@@ -49,7 +49,7 @@ export const dictionaries = {
       language: 'Dil'
     },
     dashboard: {
-      title: 'İdarə Paneli',
+      title: 'Spot Panel',
       subtitle: 'Avtomatlaşdırılmış ticarət sisteminizin ümumi vəziyyəti',
       live: 'Canlı',
       pause: 'Pauza',
@@ -76,10 +76,10 @@ export const dictionaries = {
       date: 'Tarix'
     },
     history: {
-      title: 'Əməliyyat Tarixçəsi',
+      title: 'Spot Tarixçəsi',
       subtitle: 'Süni Zəkanın etdiyi bütün ticarət əməliyyatları',
-      stopSystem: 'Sistemi Dayandır',
-      startSystem: 'Sistemi Aktiv Et',
+      stopSystem: 'Spot Sistemini Dayandır',
+      startSystem: 'Spot Sistemini Aktiv Et',
       noTradesTitle: 'Hələlik əməliyyat yoxdur',
       noTradesDesc: 'Bot işə düşdükdən və ilk əməliyyatı etdikdən sonra tarixçəniz burada görünəcək.',
       profit: 'Qazanc',
@@ -108,8 +108,8 @@ export const dictionaries = {
   },
   en: {
     sidebar: {
-      panel: 'Dashboard',
-      history: 'Trade History',
+      panel: 'Spot Dashboard',
+      history: 'Spot History',
       support: 'Support',
       notifications: 'Notifications',
       settings: 'Settings',
@@ -156,7 +156,7 @@ export const dictionaries = {
       language: 'Language'
     },
     dashboard: {
-      title: 'Dashboard',
+      title: 'Spot Dashboard',
       subtitle: 'General status of your automated trading system',
       live: 'Live',
       pause: 'Paused',
@@ -183,10 +183,10 @@ export const dictionaries = {
       date: 'Date'
     },
     history: {
-      title: 'Trade History',
+      title: 'Spot History',
       subtitle: 'All trading operations executed by AI',
-      stopSystem: 'Stop System',
-      startSystem: 'Activate System',
+      stopSystem: 'Stop Spot System',
+      startSystem: 'Start Spot System',
       noTradesTitle: 'No trades yet',
       noTradesDesc: 'Your trade history will appear here once the bot makes its first operation.',
       profit: 'Profit',

@@ -4,6 +4,7 @@ import { initTradingStore } from '@/lib/trading-store';
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbGet, dbRun } from '@/lib/db';
+import { setFuturesActive } from '@/lib/bot-control';
 
 export async function GET() {
   try {
@@ -56,10 +57,7 @@ export async function POST(req: Request) {
       await dbRun('UPDATE futures_risk_configs SET leverage = ? WHERE user_id = ?', [clampedLeverage, session.id]);
     }
     if (isFuturesActive !== undefined) {
-      await dbRun('UPDATE futures_risk_configs SET is_futures_active = ? WHERE user_id = ?', [isFuturesActive ? 1 : 0, session.id]);
-      if (isFuturesActive) {
-        await dbRun('UPDATE users SET is_active = 1 WHERE id = ?', [session.id]);
-      }
+      await setFuturesActive(session.id, Boolean(isFuturesActive));
     }
     if (blacklistCoins !== undefined) {
       await dbRun('UPDATE futures_risk_configs SET blacklist_coins = ? WHERE user_id = ?', [blacklistCoins, session.id]);

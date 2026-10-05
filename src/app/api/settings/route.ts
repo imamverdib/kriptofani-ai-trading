@@ -4,6 +4,7 @@ import { initTradingStore } from '@/lib/trading-store';
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { dbGet, dbRun } from '@/lib/db';
+import { setSpotActive } from '@/lib/bot-control';
 
 export async function GET() {
   try {
@@ -56,6 +57,7 @@ export async function POST(req: Request) {
 
     if (body.riskPerTradePct !== undefined) await dbRun('UPDATE risk_configs SET risk_per_trade_pct=? WHERE user_id=?', [body.riskPerTradePct,session.id]);
     if (body.maxOpenPositions !== undefined) await dbRun('UPDATE risk_configs SET max_open_positions=? WHERE user_id=?', [body.maxOpenPositions,session.id]);
+    if (body.isSpotActive !== undefined) await setSpotActive(session.id, Boolean(body.isSpotActive));
     return NextResponse.json({ success: true });
   } catch (err) {
     return NextResponse.json({ error: errorMessage(err) }, { status: 500 });

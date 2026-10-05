@@ -15,8 +15,9 @@ export async function enqueueManual(kind:'spot'|'futures',userId:number){
  return transaction(async sql=>{
   const field=kind==='spot'?'last_force_run':'last_futures_force_run',cooldown=kind==='spot'?900000:600000;
   const user=await sql.get('SELECT * FROM users WHERE id=?',[userId]);
-  if(!user||!user.is_active||user.subscription_status!=='active')throw new Error('Active, unpaused subscription required');
-  if(kind==='futures') {const cfg=await sql.get('SELECT is_futures_active FROM futures_risk_configs WHERE user_id=?',[userId]);if(!cfg?.is_futures_active)throw new Error('Futures is paused');}
+  if(!user||user.subscription_status!=='active')throw new Error('Active, unpaused subscription required');
+  if(kind==='spot') {const cfg=await sql.get<{is_spot_active:number}>('SELECT is_spot_active FROM risk_configs WHERE user_id=?',[userId]);if(!cfg?.is_spot_active)throw new Error('Spot is paused');}
+  if(kind==='futures') {const cfg=await sql.get<{is_futures_active:number}>('SELECT is_futures_active FROM futures_risk_configs WHERE user_id=?',[userId]);if(!cfg?.is_futures_active)throw new Error('Futures is paused');}
   const existing=await sql.get("SELECT id,state FROM trading_jobs WHERE kind=? AND user_id=? AND state IN ('QUEUED','RUNNING')",[kind,userId]);if(existing)return existing;
   const now=Date.now();if(now-Number(user[field]||0)<cooldown)throw new Error('Cooldown active');
   await sql.run(`UPDATE users SET ${field}=? WHERE id=?`,[now,userId]);
@@ -34,7 +35,14 @@ export async function processOneJob(run:(kind:JobKind,userId?:number)=>Promise<v
   if(!job)return false;
   try{
    if(job.user_id===0&&job.kind!=='monitor'){
-    const users=await read(sql=>sql.all<{id:number}>("SELECT id FROM users WHERE is_active=1 AND subscription_status='active' ORDER BY id"));
+    let users:{id:number}[]=[];
+    if(job.kind==='futures'){
+     users=await read(sql=>sql.all<{id:number}>("SELECT u.id FROM users u JOIN futures_risk_configs f ON f.user_id=u.id WHERE f.is_futures_active=1 AND u.subscription_status='active' ORDER BY u.id"));
+    }else if(job.kind==='spot'){
+     users=await read(sql=>sql.all<{id:number}>("SELECT u.id FROM users u JOIN risk_configs r ON r.user_id=u.id WHERE r.is_spot_active=1 AND u.subscription_status='active' ORDER BY u.id"));
+    }else{
+     users=await read(sql=>sql.all<{id:number}>("SELECT id FROM users WHERE is_active=1 AND subscription_status='active' ORDER BY id"));
+    }
     // Rotate the initial account every schedule window; no permanent first-user priority.
     const admitted=users.filter(u=>tradingUserIds().includes(u.id));
     const shift=admitted.length?Math.floor(Date.now()/1800000)%admitted.length:0;

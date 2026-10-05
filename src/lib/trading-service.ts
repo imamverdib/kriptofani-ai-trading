@@ -166,6 +166,8 @@ export async function runAnalysis(m:Market,targetUserId?:number){
  const users=await read(sql=>sql.all<{id:number}>('SELECT id FROM users WHERE '+(targetUserId?'id=?':'is_active=1'),targetUserId?[targetUserId]:[]));
  for(const u of users){
   try{
+   if(m==='spot'){const s=await read(sql=>sql.get<{is_spot_active:number}>('SELECT is_spot_active FROM risk_configs WHERE user_id=?',[u.id]));if(!s?.is_spot_active)continue;}
+   if(m==='futures'){const f=await read(sql=>sql.get<{is_futures_active:number}>('SELECT is_futures_active FROM futures_risk_configs WHERE user_id=?',[u.id]));if(!f?.is_futures_active)continue;}
    await accountOwner(u.id,()=>monitorAccountUnlocked(u.id));await assertEntryEnabled(u.id,m);
    const config=await read(sql=>sql.get<RiskConfigRow>(`SELECT * FROM ${m==='spot'?'risk_configs':'futures_risk_configs'} WHERE user_id=?`,[u.id]));
    if(!config||config.max_risk_pct<=0||config.risk_per_trade_pct<=0)continue;

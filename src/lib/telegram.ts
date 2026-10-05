@@ -3,6 +3,7 @@ import type { SpotAccount } from './exchange-types';
 import { exchange } from './exchange-client';
 import { dbRun, dbGet } from '@/lib/db';
 import { decrypt } from '@/lib/encryption';
+import { setBotActive } from './bot-control';
 
 
 
@@ -93,22 +94,29 @@ export async function processUserCommand(user: AppUser, chatId: string, text: st
       ? '🤖 Süni Zəka Seçimi (AUTO)' 
       : config.target_coins.split(',').map((c: string) => c.replace('USDT', '')).join(', ');
 
+    const spotCfg = await dbGet<{is_spot_active: number}>('SELECT is_spot_active FROM risk_configs WHERE user_id = ?', [user.id]);
+    const futuresCfg = await dbGet<{is_futures_active: number}>('SELECT is_futures_active FROM futures_risk_configs WHERE user_id = ?', [user.id]);
+    const spotActive = spotCfg?.is_spot_active === 1;
+    const futuresActive = futuresCfg?.is_futures_active === 1;
+
     const statusMessage = 
 `📊 *KriptoFani Cari Vəziyyət:*
 
-🟢 *Status:* ${user.is_active === 1 ? 'Canlı (Aktiv)' : 'Pauza (Deaktiv)'}
+🟢 *Ümumi Status:* ${user.is_active === 1 ? 'Aktiv (Ticarət Gedir)' : 'Pauza (Deaktiv)'}
+📊 *Spot Panel:* ${spotActive ? '🟢 Aktiv (1h rutin)' : '🔴 Deaktiv'}
+⚡ *Futures Panel:* ${futuresActive ? '🟢 Aktiv (15m rutin)' : '🔴 Deaktiv'}
 💰 *Spot Balansı:* ${balance !== null ? `$${balance.toLocaleString()}` : 'Məlumat tapılmadı' + balanceErr}
-📈 *Risk Limiti:* %${config.max_risk_pct}
+📈 *Spot Risk Limiti:* %${config.max_risk_pct}
 🪙 *Hədəf Koinlər:* ${formattedCoins}`;
 
     await sendMessageToUser(user.id, chatId, statusMessage);
   }
   else if (command === '/aktiv') {
-    await dbRun("UPDATE users SET is_active = 1 WHERE id = ? AND subscription_status = 'active'", [user.id]);
+    await setBotActive(user.id, true);
     await sendMessageToUser(user.id, chatId, '🟢 KriptoFani ticarət botu uğurla aktivləşdirildi! Yeni ticarət imkanları analiz edilir...');
   }
   else if (command === '/dayandir') {
-    await dbRun('UPDATE users SET is_active = 0 WHERE id = ?', [user.id]);
+    await setBotActive(user.id, false);
     await sendMessageToUser(user.id, chatId, '🔴 KriptoFani ticarət botu pauza rejiminə keçirildi. Mövcud əməliyyatlar saxlanılacaq, lakin yeni mövqe açılmayacaq.');
   }
   else if (command === '/faiz') {

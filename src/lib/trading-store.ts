@@ -36,6 +36,8 @@ export function initTradingStore() {
         const cols=await sql.all<{name:string}>(`PRAGMA table_info(${table})`);
         if(!cols.some(c=>c.name==='risk_per_trade_pct'))await sql.run(`ALTER TABLE ${table} ADD COLUMN risk_per_trade_pct REAL NOT NULL DEFAULT 0.25`);
       }
+      const spotCols=await sql.all<{name:string}>('PRAGMA table_info(risk_configs)');
+      if(!spotCols.some(c=>c.name==='is_spot_active'))await sql.run('ALTER TABLE risk_configs ADD COLUMN is_spot_active INTEGER NOT NULL DEFAULT 1');
       const intentCols=await sql.all<{name:string}>('PRAGMA table_info(order_intents)');
       if(!intentCols.some(c=>c.name==='reconciled'))await sql.run('ALTER TABLE order_intents ADD COLUMN reconciled INTEGER NOT NULL DEFAULT 0');
       const riskCols=await sql.all<{name:string}>('PRAGMA table_info(risk_state)');

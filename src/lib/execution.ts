@@ -296,6 +296,7 @@ export async function assertEntryEnabled(userId:number,market:Market){
  if(!u||!u.is_active||u.subscription_status!=='active')throw new Error('Account paused or subscription inactive');
  if(u.subscription_expires_at&&Date.parse(u.subscription_expires_at.replace(' ','T')+(/Z$/.test(u.subscription_expires_at)?'':'Z'))<=Date.now())throw new Error('Subscription expired');
  if(market==='futures'){const r=await read(sql=>sql.get('SELECT is_futures_active FROM futures_risk_configs WHERE user_id=?',[userId]));if(!r?.is_futures_active)throw new Error('Futures paused')}
+ if(market==='spot'){const r=await read(sql=>sql.get('SELECT is_spot_active FROM risk_configs WHERE user_id=?',[userId]));if(!r?.is_spot_active)throw new Error('Spot paused')}
  const risk=await read(sql=>sql.get<Pick<RiskRow,'frozen_reason'>>('SELECT frozen_reason FROM risk_state WHERE user_id=?',[userId]));if(risk?.frozen_reason)throw new Error(risk.frozen_reason);
  const registry=await read(sql=>sql.get('SELECT uid FROM account_keys WHERE user_id=? AND market=?',[userId,market]));if(!registry)throw new Error('API keys must be re-verified in settings');
  // Old rows cannot be reinterpreted as verified fills. Explicit reconciliation is required.

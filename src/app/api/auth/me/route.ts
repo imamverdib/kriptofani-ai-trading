@@ -18,6 +18,8 @@ export async function GET() {
     }
 
     const telegramIdentity=await read(sql=>sql.get('SELECT telegram_id FROM telegram_identities WHERE user_id=?',[session.id]));
+    const spotConfig = await read(sql => sql.get<{is_spot_active: number}>('SELECT is_spot_active FROM risk_configs WHERE user_id = ?', [session.id]));
+    const futuresConfig = await read(sql => sql.get<{is_futures_active: number}>('SELECT is_futures_active FROM futures_risk_configs WHERE user_id = ?', [session.id]));
     let status = user.subscription_status;
     if (status === 'active' && user.subscription_expires_at) {
       const expiry = new Date(user.subscription_expires_at).getTime();
@@ -35,6 +37,8 @@ export async function GET() {
         has_binance_keys: !!user.binance_api_key,
         futures_api_key: !!user.futures_api_key,
         is_active: user.is_active,
+        is_spot_active: spotConfig?.is_spot_active === 1,
+        is_futures_active: futuresConfig?.is_futures_active === 1,
         last_force_run: user.last_force_run || 0,
         last_futures_force_run: user.last_futures_force_run || 0,
         role: user.role,

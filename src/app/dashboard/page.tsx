@@ -88,7 +88,7 @@ export default function Dashboard() {
       .then(res => res.json())
       .then(data => {
         if (data.user) {
-          setIsBotActive(data.user.is_active === 1);
+          setIsBotActive(data.user.is_spot_active === true);
           if (data.user.last_force_run) {
             const timeSinceLastRun = Date.now() - data.user.last_force_run;
             const cooldownMs = 15 * 60 * 1000;
@@ -105,6 +105,9 @@ export default function Dashboard() {
       .then(res => res.json())
       .then(data => {
         if (data.success && data.config) {
+          if (data.config.is_spot_active !== undefined) {
+            setIsBotActive(data.config.is_spot_active === 1);
+          }
           setMaxRiskPct(data.config.max_risk_pct ?? 2);
           setRiskPerTradePct(data.config.risk_per_trade_pct ?? 0.25);
           setMinConfidence(data.config.min_confidence ?? 75);
@@ -158,7 +161,7 @@ export default function Dashboard() {
       const res = await fetch('/api/auth/toggle-bot', { method: 'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:!isBotActive}) });
       const data = await res.json();
       if (res.ok) {
-        setIsBotActive(data.is_active === 1);
+        setIsBotActive(data.is_spot_active === 1);
       }
     } catch (error) {
       console.error('Failed to toggle bot', error);

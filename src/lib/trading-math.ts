@@ -57,6 +57,7 @@ export function validateSettings(body: Record<string, unknown>) {
   if(body.targetCoins!==undefined) {body.targetCoins=normalizeSymbols(body.targetCoins);if(!body.targetCoins)throw new Error('Empty coin list');}
   if(body.blacklistCoins!==undefined)body.blacklistCoins=normalizeSymbols(body.blacklistCoins,false);
   if(body.isFuturesActive!==undefined&&typeof body.isFuturesActive!=='boolean')throw new Error('Invalid activation flag');
+  if(body.isSpotActive!==undefined&&typeof body.isSpotActive!=='boolean')throw new Error('Invalid activation flag');
   if(body.language!==undefined&&!['en','az'].includes(String(body.language)))throw new Error('Invalid language');
   return body;
 }

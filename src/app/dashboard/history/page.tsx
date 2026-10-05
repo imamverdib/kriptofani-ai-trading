@@ -28,10 +28,11 @@ export default function HistoryPage() {
   }, []);
 
   const handleToggleBot = async () => {
-    const res = await fetch('/api/auth/toggle-bot', { method: 'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:!user?.is_active}) });
+    const isCurrentActive = user?.is_spot_active === true;
+    const res = await fetch('/api/auth/toggle-bot', { method: 'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:!isCurrentActive}) });
     const data = await res.json();
     if (data.success) {
-      setUser(current=>current?{...current,is_active:data.is_active}:null);
+      setUser(current=>current?{...current,is_spot_active:data.is_spot_active === 1,is_active:data.is_active}:null);
     }
   };
 
@@ -56,13 +57,13 @@ export default function HistoryPage() {
             display: 'flex', 
             alignItems: 'center', 
             gap: '8px',
-            background: user?.is_active ? 'var(--danger-bg)' : 'var(--success-bg)',
-            color: user?.is_active ? 'var(--danger)' : 'var(--success)',
-            border: `1px solid ${user?.is_active ? 'var(--danger)' : 'var(--success)'}`
+            background: user?.is_spot_active ? 'var(--danger-bg)' : 'var(--success-bg)',
+            color: user?.is_spot_active ? 'var(--danger)' : 'var(--success)',
+            border: `1px solid ${user?.is_spot_active ? 'var(--danger)' : 'var(--success)'}`
           }}
         >
           <Power size={18} />
-          {user?.is_active ? t.history.stopSystem : t.history.startSystem}
+          {user?.is_spot_active ? t.history.stopSystem : t.history.startSystem}
         </button>
       </div>
 

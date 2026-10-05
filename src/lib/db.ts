@@ -80,6 +80,7 @@ export function getDb(): sqlite3.Database {
           max_leverage INTEGER DEFAULT 1,
           min_confidence INTEGER DEFAULT 75,
           target_coins TEXT DEFAULT 'AUTO',
+          is_spot_active INTEGER DEFAULT 1,
           FOREIGN KEY (user_id) REFERENCES users (id)
         )
       `);
@@ -220,6 +221,7 @@ export function getDb(): sqlite3.Database {
       // Auto-migrate futures_risk_configs columns
       db!.run(`ALTER TABLE futures_risk_configs ADD COLUMN blacklist_coins TEXT DEFAULT ''`, () => {});
       db!.run(`ALTER TABLE futures_risk_configs ADD COLUMN auto_coin_count INTEGER DEFAULT 7`, () => {});
+      db!.run(`ALTER TABLE risk_configs ADD COLUMN is_spot_active INTEGER DEFAULT 1`, () => {});
 
 
       // Futures columns on users
