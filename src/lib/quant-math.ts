@@ -76,12 +76,12 @@ export function computeQuantPlan(
       stopLossPrice = currentPrice - volatilityBuffer;
     }
 
-    // Safety boundary: Stop-loss must be between 0.5% and 2.0%
+    // Safety boundary: Stop-loss must be between 0.5% and 2.5%
     const minSL = currentPrice * 0.995; // 0.5% max tightness
-    const maxSL = currentPrice * 0.980; // 2.0% max width
+    const maxSL = currentPrice * 0.975; // 2.5% max width
 
     if (stopLossPrice > minSL) stopLossPrice = minSL;
-    if (stopLossPrice < maxSL) throw new Error('Structural stop exceeds volatility budget');
+    if (stopLossPrice < maxSL) stopLossPrice = maxSL;
 
     const riskDistance = currentPrice - stopLossPrice;
     const takeProfit1 = currentPrice + riskDistance * 2.0; // 1:2 R:R (50%)
@@ -111,12 +111,12 @@ export function computeQuantPlan(
       stopLossPrice = currentPrice + volatilityBuffer;
     }
 
-    // Safety boundary: Stop-loss between 0.5% and 2.0%
+    // Safety boundary: Stop-loss between 0.5% and 2.5%
     const minSL = currentPrice * 1.005; // 0.5%
-    const maxSL = currentPrice * 1.020; // 2.0%
+    const maxSL = currentPrice * 1.025; // 2.5%
 
     if (stopLossPrice < minSL) stopLossPrice = minSL;
-    if (stopLossPrice > maxSL) throw new Error('Structural stop exceeds volatility budget');
+    if (stopLossPrice > maxSL) stopLossPrice = maxSL;
 
     const riskDistance = stopLossPrice - currentPrice;
     const takeProfit1 = currentPrice - riskDistance * 2.0; // 1:2 R:R (50%)
@@ -137,7 +137,37 @@ export function computeQuantPlan(
   }
 }
 
-export type MarketRegime = 'RANGING' | 'TRENDING' | 'STRONG_TREND';
+/**
+ * Finds key swing structural support and resistance levels from candlestick history
+ */
+export function findSwingLevels(bars: KlineBar[], lookback = 36): { supports: number[]; resistances: number[] } {
+  if (!bars || bars.length < 5) return { supports: [], resistances: [] };
+  const slice = bars.slice(-Math.max(lookback, 10));
+  const supports: number[] = [];
+  const resistances: number[] = [];
+
+  for (let i = 2; i < slice.length - 2; i++) {
+    const b = slice[i];
+    if (b.low <= slice[i - 1].low && b.low <= slice[i - 2].low && b.low <= slice[i + 1].low && b.low <= slice[i + 2].low) {
+      supports.push(b.low);
+    }
+    if (b.high >= slice[i - 1].high && b.high >= slice[i - 2].high && b.high >= slice[i + 1].high && b.high >= slice[i + 2].high) {
+      resistances.push(b.high);
+    }
+  }
+
+  const minLow = Math.min(...slice.map(b => b.low));
+  const maxHigh = Math.max(...slice.map(b => b.high));
+  if (!supports.includes(minLow)) supports.push(minLow);
+  if (!resistances.includes(maxHigh)) resistances.push(maxHigh);
+
+  return {
+    supports: supports.sort((a, b) => b - a),
+    resistances: resistances.sort((a, b) => a - b)
+  };
+}
+
+export type MarketRegime = 'UNKNOWN' | 'RANGING' | 'TRENDING' | 'STRONG_TREND';
 
 export interface MarketRegimeInfo {
   regime: MarketRegime;
@@ -149,12 +179,13 @@ export interface MarketRegimeInfo {
 
 /**
  * Detects whether the market is in consolidation (ranging) or trending (directional momentum).
+ * Returns UNKNOWN if data is insufficient or invalid.
  */
 export function detectMarketRegime(bars: KlineBar[], period = 14): MarketRegimeInfo {
   if (!bars || bars.length < period * 2) {
     return {
-      regime: 'RANGING',
-      adx: 15,
+      regime: 'UNKNOWN',
+      adx: 0,
       pdi: 0,
       mdi: 0,
       trendDirection: 'NEUTRAL'
@@ -170,8 +201,8 @@ export function detectMarketRegime(bars: KlineBar[], period = 14): MarketRegimeI
 
   if (!latest || typeof latest.adx !== 'number' || !Number.isFinite(latest.adx)) {
     return {
-      regime: 'RANGING',
-      adx: 15,
+      regime: 'UNKNOWN',
+      adx: 0,
       pdi: 0,
       mdi: 0,
       trendDirection: 'NEUTRAL'

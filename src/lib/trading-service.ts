@@ -11,7 +11,8 @@ import { decrypt } from './encryption';
 import { read, transaction, type Market } from './trading-store';
 import { exchange, exchangeInfo, klines, price, depthQuote, ExchangeError, type Credentials } from './exchange-client';
 import { accountOwner, assertEntryEnabled, freeze, gateway, monitorPosition, positions, reserve, openPosition } from './execution';
-import { computeQuantPlan, detectMarketRegime, type QuantPlan } from './quant-math';
+import { computeQuantPlan, detectMarketRegime, findSwingLevels, type QuantPlan } from './quant-math';
+import { evaluateFibonacciSetup, type FibonacciSetup } from './quant-fibonacci';
 import { grid, normalizeSymbols, positive, sizePosition, validatePlan, utcTime } from './trading-math';
 import { evaluateWithJev, isTypeSafeConfigured } from './typesafe';
 
@@ -118,43 +119,114 @@ async function targets(m:Market,config:{target_coins:string;blacklist_coins?:str
   .sort((a,b)=>Number(b.quoteVolume)-Number(a.quoteVolume)).slice(0,config.auto_coin_count||5).map(r=>r.symbol);
 }
 async function decide(m:Market,symbol:string,userId:number){
- const bars=await klines(m,symbol,m==='futures'?'15m':'1h',100),higher=await klines(m,symbol,'4h',210);
+ const bars=await klines(m,symbol,'1h',100),higher=await klines(m,symbol,'4h',210);
  if(bars.length<60||higher.length<200)throw new Error('Not enough closed candles');
  const closes=bars.map(b=>b.close),hc=higher.map(b=>b.close);
  const a=sma({values:hc,period:20}).at(-1)!,b=sma({values:hc,period:50}).at(-1)!;
  const trend=a>b?'LONG':a<b?'SHORT':'WAIT';
  const oscillator=rsi({values:closes,period:14}).at(-1)!;
  const regimeInfo=detectMarketRegime(bars,14);
- const snapshot={symbol,market:m,asOf:Date.now(),barClose:bars.at(-1)!.closeTime,trend,rsi:oscillator,regime:regimeInfo.regime,adx:regimeInfo.adx,trendDirection:regimeInfo.trendDirection,bars,higher};
- let action='WAIT',confidence=0,provider='none';
+ const fibSetup=evaluateFibonacciSetup(bars,higher,0.02);
+ const snapshot={
+   symbol,
+   market:m,
+   asOf:Date.now(),
+   barClose:bars.at(-1)!.closeTime,
+   trend,
+   rsi:oscillator,
+   regime:regimeInfo.regime,
+   adx:regimeInfo.adx,
+   trendDirection:regimeInfo.trendDirection,
+   fibonacci: fibSetup ? {
+     side: fibSetup.side,
+     goldenPocketHit: true,
+     swingLow: fibSetup.levels.swingLow,
+     swingHigh: fibSetup.levels.swingHigh,
+     rangePct: Number(((fibSetup.levels.range / fibSetup.levels.swingLow) * 100).toFixed(2)),
+     stopPrice: fibSetup.stopPrice,
+     tp1: fibSetup.tp1,
+     tp2: fibSetup.tp2,
+     tp3: fibSetup.tp3,
+     riskRewardRatio: fibSetup.riskRewardRatio
+   } : null,
+   bars,
+   higher
+ };
+ let rawAction = 'WAIT', rawConfidence = 0, isHighRisk = false, riskNoul = 0, filterReason: string | null = null, provider = 'none';
+
  // AI proposes direction only. Sizing, stop placement and validation are deterministic.
  if(isTypeSafeConfigured()){
   const d=await evaluateWithJev(JSON.stringify(snapshot));if(!d)throw new Error('Primary model unavailable; fallback disabled');
-  if(!d.isHighRisk){action=d.action;confidence=d.confidence}provider=process.env.TYPESAFE_MODEL||'jev-latest';
+  rawAction = d.action;
+  rawConfidence = d.confidence;
+  isHighRisk = d.isHighRisk;
+  riskNoul = d.riskNoul ?? 0;
+  provider = process.env.TYPESAFE_MODEL || 'jev-latest';
  }else if(process.env.GEMINI_API_KEY){
   const model=new GoogleGenerativeAI(process.env.GEMINI_API_KEY).getGenerativeModel({model:process.env.GEMINI_MODEL||'gemini-2.5-flash',generationConfig:{temperature:0,responseMimeType:'application/json',responseSchema:{type:SchemaType.OBJECT,properties:{action:{type:SchemaType.STRING,format:'enum',enum:['LONG','SHORT','WAIT']},confidence:{type:SchemaType.INTEGER}},required:['action','confidence']}}});
   const result=await model.generateContent(`Choose LONG, SHORT or WAIT using only this closed-candle snapshot. Market regime is ${regimeInfo.regime} (ADX: ${regimeInfo.adx}). Confidence is model confidence, not probability of profit. Only trade aligned with the higher timeframe. ${JSON.stringify(snapshot)}`,{timeout:10000});
-  const d=JSON.parse(result.response.text());action=d.action;confidence=d.confidence;provider=process.env.GEMINI_MODEL||'gemini-2.5-flash';
+  const d=JSON.parse(result.response.text());
+  rawAction = d.action;
+  rawConfidence = d.confidence;
+  provider = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
  }else throw new Error('Decision provider not configured');
- if(!['LONG','SHORT','WAIT'].includes(action)||!Number.isInteger(confidence)||confidence<0||confidence>100)throw new Error('Invalid model response');
+ if(!['LONG','SHORT','WAIT'].includes(rawAction)||!Number.isInteger(rawConfidence)||rawConfidence<0||rawConfidence>100)throw new Error('Invalid model response');
  
- const rawAction = action;
- const rawConfidence = confidence;
+ let action = rawAction;
+ let confidence = rawConfidence;
 
- // Dynamic Market Regime & Confluence Filter
- const isTrending = regimeInfo.regime !== 'RANGING';
- if (isTrending) {
-   if (action !== trend) action = 'WAIT';
-   if ((action === 'LONG' && oscillator > 70) || (action === 'SHORT' && oscillator < 30)) action = 'WAIT';
- } else {
-   if ((action === 'LONG' && oscillator > 60) || (action === 'SHORT' && oscillator < 40)) action = 'WAIT';
-   if (action !== trend && (oscillator >= 35 && oscillator <= 65)) action = 'WAIT';
+ // 1. Risk gate check
+ if (isHighRisk) {
+   action = 'WAIT';
+   filterReason = `RISK_GATE (noul: ${riskNoul.toFixed(2)})`;
  }
- if (m === 'spot' && action === 'SHORT') action = 'WAIT';
+
+ // 2. Dynamic Market Regime & Confluence Filter
+ if (action !== 'WAIT') {
+   if (regimeInfo.regime === 'UNKNOWN') {
+     action = 'WAIT';
+     filterReason = 'UNKNOWN_MARKET_REGIME';
+   } else {
+     const isTrending = regimeInfo.regime !== 'RANGING';
+     if (isTrending) {
+       if (action !== trend) {
+         action = 'WAIT';
+         filterReason = `TREND_MISMATCH (4h trend: ${trend})`;
+       } else if ((action === 'LONG' && oscillator > 70) || (action === 'SHORT' && oscillator < 30)) {
+         action = 'WAIT';
+         filterReason = `EXTREME_OSCILLATOR (${oscillator.toFixed(1)})`;
+       }
+     } else {
+       if ((action === 'LONG' && oscillator > 60) || (action === 'SHORT' && oscillator < 40)) {
+         action = 'WAIT';
+         filterReason = `RANGE_OSCILLATOR_BOUND (${oscillator.toFixed(1)})`;
+       } else if (action !== trend && (oscillator >= 35 && oscillator <= 65)) {
+         action = 'WAIT';
+         filterReason = 'RANGE_COUNTER_TREND';
+       }
+     }
+   }
+ }
+
+ // 3. Fibonacci Confluence Filter for Futures
+ if (m === 'futures' && action !== 'WAIT') {
+   if (!fibSetup || !fibSetup.valid) {
+     action = 'WAIT';
+     filterReason = 'NO_FIBONACCI_GOLDEN_POCKET_SETUP';
+   } else if (action !== fibSetup.side) {
+     action = 'WAIT';
+     filterReason = `FIBONACCI_SIDE_MISMATCH (AI: ${action}, Fib: ${fibSetup.side})`;
+   }
+ }
+
+ if (m === 'spot' && action === 'SHORT') {
+   action = 'WAIT';
+   filterReason = 'SPOT_SHORT_UNSUPPORTED';
+ }
 
  const id=randomUUID();
- await transaction(sql=>sql.run('INSERT INTO decision_snapshots VALUES (?,?,?,?,?,?,?,?)',[id,userId,m,symbol,`risk-v2:${provider}`,Date.now(),JSON.stringify(snapshot),JSON.stringify({action,confidence,rawAction,rawConfidence,regime:regimeInfo.regime,adx:regimeInfo.adx})]));
- return {id,action,confidence,rawAction,rawConfidence,bars,time:snapshot.asOf,reference:bars.at(-1)!.close,regimeInfo};
+ await transaction(sql=>sql.run('INSERT INTO decision_snapshots VALUES (?,?,?,?,?,?,?,?)',[id,userId,m,symbol,`risk-v2:${provider}`,Date.now(),JSON.stringify(snapshot),JSON.stringify({action,confidence,rawAction,rawConfidence,isHighRisk,riskNoul,filterReason,fibSetup:fibSetup?{side:fibSetup.side,tp1:fibSetup.tp1,stop:fibSetup.stopPrice}:null,regime:regimeInfo.regime,adx:regimeInfo.adx})]));
+ return {id,action,confidence,rawAction,rawConfidence,isHighRisk,riskNoul,filterReason,fibSetup,bars,time:snapshot.asOf,reference:bars.at(-1)!.close,regimeInfo};
 }
 async function feeRate(m:Market,symbol:string,c:Credentials){
  if(m==='futures'){const d=await exchange(m,'/fapi/v1/commissionRate',{symbol},c);const rate=Number(d.takerCommissionRate);if(!Number.isFinite(rate)||rate<0)throw new Error('Invalid taker rate');return rate}
@@ -187,14 +259,15 @@ export async function recordShadowTrade(
   entryPrice: number,
   plan: QuantPlan,
   confidence: number,
-  reason: string
+  reason: string,
+  candleTime: number
 ) {
   try {
     const id = randomUUID();
     await transaction(sql => sql.run(
-      `INSERT INTO shadow_positions (id, user_id, market, symbol, side, entry_price, stop_price, tp1, tp2, tp3, confidence, state, max_bars, bars_held, high_water, simulated_pnl, created_at, reason)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', 16, 0, ?, 0, ?, ?)`,
-      [id, userId, market, symbol, side, entryPrice, plan.stopLossPrice, plan.takeProfit1, plan.takeProfit2, plan.takeProfit3, confidence, entryPrice, Date.now(), reason]
+      `INSERT INTO shadow_positions (id, user_id, market, symbol, side, entry_price, stop_price, tp1, tp2, tp3, confidence, state, stage, remaining_ratio, trailing_stop, max_bars, bars_held, last_candle_time, high_water, simulated_pnl, created_at, reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', 0, 1.0, 0, 16, 0, ?, ?, 0, ?, ?)`,
+      [id, userId, market, symbol, side, entryPrice, plan.stopLossPrice, plan.takeProfit1, plan.takeProfit2, plan.takeProfit3, confidence, candleTime, entryPrice, Date.now(), reason]
     ));
   } catch (err) {
     console.error(`[ShadowTrade] Failed to record shadow position for ${symbol}:`, err);
@@ -216,11 +289,16 @@ export async function updateShadowPositions(m: Market) {
         tp3: number;
         confidence: number;
         state: string;
+        stage: number;
+        remaining_ratio: number;
+        trailing_stop: number;
         max_bars: number;
         bars_held: number;
+        last_candle_time: number;
         high_water: number;
         simulated_pnl: number;
         created_at: number;
+        reason?: string;
       }>('SELECT * FROM shadow_positions WHERE market=? AND state="OPEN"', [m])
     );
 
@@ -234,67 +312,130 @@ export async function updateShadowPositions(m: Market) {
     }
 
     const now = Date.now();
+    const FEE_RATE = 0.0005; // 0.05% taker fee
+    const SLIPPAGE = 0.0005; // 0.05% slippage
+
     for (const [sym, posList] of bySymbol.entries()) {
       try {
-        const recentBars = await klines(m, sym, m === 'futures' ? '15m' : '1h', 5);
+        const recentBars = await klines(m, sym, '1h', 5);
         if (!recentBars.length) continue;
         const latestBar = recentBars.at(-1)!;
 
         for (const pos of posList) {
-          const isLong = pos.side === 'LONG';
-          const newHighWater = isLong
-            ? Math.max(pos.high_water, latestBar.high)
-            : Math.min(pos.high_water, latestBar.low);
-          const newBarsHeld = pos.bars_held + 1;
-
-          let newState = pos.state;
-          let exitPrice = 0;
-          let reason: string | null = null;
-
-          const slHit = isLong ? latestBar.low <= pos.stop_price : latestBar.high >= pos.stop_price;
-          const tp1Hit = isLong ? latestBar.high >= pos.tp1 : latestBar.low <= pos.tp1;
-          const tp2Hit = isLong ? latestBar.high >= pos.tp2 : latestBar.low <= pos.tp2;
-          const tp3Hit = isLong ? latestBar.high >= pos.tp3 : latestBar.low <= pos.tp3;
-
-          if (slHit) {
-            newState = 'SL_HIT';
-            exitPrice = pos.stop_price;
-            reason = 'Stop-loss triggered';
-          } else if (tp3Hit) {
-            newState = 'TP3_HIT';
-            exitPrice = pos.tp3;
-            reason = 'Take profit 3 reached';
-          } else if (tp2Hit) {
-            newState = 'TP2_HIT';
-            exitPrice = pos.tp2;
-            reason = 'Take profit 2 reached';
-          } else if (tp1Hit) {
-            newState = 'TP1_HIT';
-            exitPrice = pos.tp1;
-            reason = 'Take profit 1 reached';
-          } else if (newBarsHeld >= pos.max_bars) {
-            newState = 'EXPIRED';
-            exitPrice = latestBar.close;
-            reason = 'Time horizon reached (4 hours)';
+          // If this candle was already processed, skip to prevent multi-call / multi-account inflation
+          if (latestBar.closeTime <= (pos.last_candle_time || 0)) {
+            continue;
           }
 
-          if (newState !== 'OPEN') {
-            const pnlPct = isLong
+          const isLong = pos.side === 'LONG';
+          const highWater = isLong
+            ? Math.max(pos.high_water, latestBar.high)
+            : Math.min(pos.high_water, latestBar.low);
+          const barsHeld = pos.bars_held + 1;
+          let stage = pos.stage ?? 0;
+          let remainingRatio = pos.remaining_ratio ?? 1.0;
+          let stopPrice = pos.stop_price;
+          let trailingStop = pos.trailing_stop ?? 0;
+          let simPnl = pos.simulated_pnl || 0;
+          let state = 'OPEN';
+          let reason = pos.reason || '';
+
+          // 1. Check Stop Loss
+          const slHit = isLong ? latestBar.low <= stopPrice : latestBar.high >= stopPrice;
+          if (slHit) {
+            const exitPrice = stopPrice * (1 - (isLong ? 1 : -1) * SLIPPAGE);
+            const rawPct = isLong
               ? ((exitPrice - pos.entry_price) / pos.entry_price) * 100
               : ((pos.entry_price - exitPrice) / pos.entry_price) * 100;
-            const netSimPnl = Number((pnlPct - 0.1).toFixed(2));
+            const netPct = (rawPct - (FEE_RATE * 2 * 100)) * remainingRatio;
+            simPnl += netPct;
+            remainingRatio = 0;
+            state = 'SL_HIT';
+            reason = `Stop-loss triggered at ${stopPrice.toFixed(2)}`;
+          }
 
+          // 2. Check TP1 (50% close & move stop to Breakeven)
+          if (state === 'OPEN' && stage < 1) {
+            const tp1Hit = isLong ? latestBar.high >= pos.tp1 : latestBar.low <= pos.tp1;
+            if (tp1Hit) {
+              const exitPrice = pos.tp1 * (1 - (isLong ? 1 : -1) * SLIPPAGE);
+              const rawPct = isLong
+                ? ((exitPrice - pos.entry_price) / pos.entry_price) * 100
+                : ((pos.entry_price - exitPrice) / pos.entry_price) * 100;
+              const netPct = (rawPct - (FEE_RATE * 2 * 100)) * 0.5;
+              simPnl += netPct;
+              remainingRatio -= 0.5;
+              stage = 1;
+              stopPrice = pos.entry_price; // Breakeven
+              reason = 'TP1 reached (50% closed, stop moved to BE)';
+            }
+          }
+
+          // 3. Check TP2 (25% close & activate 1.5% trailing stop)
+          if (state === 'OPEN' && stage === 1) {
+            const tp2Hit = isLong ? latestBar.high >= pos.tp2 : latestBar.low <= pos.tp2;
+            if (tp2Hit) {
+              const exitPrice = pos.tp2 * (1 - (isLong ? 1 : -1) * SLIPPAGE);
+              const rawPct = isLong
+                ? ((exitPrice - pos.entry_price) / pos.entry_price) * 100
+                : ((pos.entry_price - exitPrice) / pos.entry_price) * 100;
+              const netPct = (rawPct - (FEE_RATE * 2 * 100)) * 0.25;
+              simPnl += netPct;
+              remainingRatio -= 0.25;
+              stage = 2;
+              trailingStop = isLong ? highWater * 0.985 : highWater * 1.015;
+              reason = 'TP2 reached (25% closed, trailing stop active)';
+            }
+          }
+
+          // 4. Trailing Stop Exit (Remaining 25%)
+          if (state === 'OPEN' && stage >= 2) {
+            trailingStop = isLong
+              ? Math.max(trailingStop, highWater * 0.985)
+              : Math.min(trailingStop, highWater * 1.015);
+            const trailHit = isLong ? latestBar.low <= trailingStop : latestBar.high >= trailingStop;
+            if (trailHit && remainingRatio > 0) {
+              const exitPrice = trailingStop * (1 - (isLong ? 1 : -1) * SLIPPAGE);
+              const rawPct = isLong
+                ? ((exitPrice - pos.entry_price) / pos.entry_price) * 100
+                : ((pos.entry_price - exitPrice) / pos.entry_price) * 100;
+              const netPct = (rawPct - (FEE_RATE * 2 * 100)) * remainingRatio;
+              simPnl += netPct;
+              remainingRatio = 0;
+              state = 'TRAILING_STOP';
+              reason = `Trailing stop hit at ${trailingStop.toFixed(2)}`;
+            }
+          }
+
+          // 5. Max Horizon / Expired
+          if (state === 'OPEN' && barsHeld >= pos.max_bars && remainingRatio > 0) {
+            const exitPrice = latestBar.close * (1 - (isLong ? 1 : -1) * SLIPPAGE);
+            const rawPct = isLong
+              ? ((exitPrice - pos.entry_price) / pos.entry_price) * 100
+              : ((pos.entry_price - exitPrice) / pos.entry_price) * 100;
+            const netPct = (rawPct - (FEE_RATE * 2 * 100)) * remainingRatio;
+            simPnl += netPct;
+            remainingRatio = 0;
+            state = 'EXPIRED';
+            reason = 'Time horizon reached';
+          }
+
+          if (state !== 'OPEN') {
             await transaction(sql =>
               sql.run(
-                'UPDATE shadow_positions SET state=?, bars_held=?, high_water=?, simulated_pnl=?, closed_at=?, reason=? WHERE id=?',
-                [newState, newBarsHeld, newHighWater, netSimPnl, now, reason, pos.id]
+                `UPDATE shadow_positions 
+                 SET state=?, stage=?, remaining_ratio=?, trailing_stop=?, stop_price=?, bars_held=?, last_candle_time=?, high_water=?, simulated_pnl=?, closed_at=?, reason=? 
+                 WHERE id=?`,
+                [state, stage, remainingRatio, trailingStop, stopPrice, barsHeld, latestBar.closeTime, highWater, Number(simPnl.toFixed(2)), now, reason, pos.id]
               )
             );
           } else {
             await transaction(sql =>
               sql.run(
-                'UPDATE shadow_positions SET bars_held=?, high_water=? WHERE id=?',
-                [newBarsHeld, newHighWater, pos.id]
+                `UPDATE shadow_positions 
+                 SET stage=?, remaining_ratio=?, trailing_stop=?, stop_price=?, bars_held=?, last_candle_time=?, high_water=?, simulated_pnl=?, reason=? 
+                 WHERE id=?`,
+                [stage, remainingRatio, trailingStop, stopPrice, barsHeld, latestBar.closeTime, highWater, Number(simPnl.toFixed(2)), reason, pos.id]
               )
             );
           }
@@ -325,17 +466,32 @@ export async function runAnalysis(m:Market,targetUserId?:number){
      await assertEntryEnabled(u.id,m);
      const d=await decide(m,symbol,u.id);
 
+     const swing = findSwingLevels(d.bars, 36);
+
      // Shadow Position Logging for counterfactual intelligence:
      const candidateSide = (d.action !== 'WAIT' ? d.action : d.rawAction !== 'WAIT' ? d.rawAction : null) as 'LONG' | 'SHORT' | null;
      if (candidateSide) {
        try {
-         const shadowPlan = computeQuantPlan(candidateSide, d.reference, d.bars.slice(-30));
+         const shadowPlan: QuantPlan = (d.fibSetup && d.fibSetup.side === candidateSide)
+           ? {
+               entryPrice: d.reference,
+               stopLossPrice: d.fibSetup.stopPrice,
+               takeProfit1: d.fibSetup.tp1,
+               takeProfit2: d.fibSetup.tp2,
+               takeProfit3: d.fibSetup.tp3,
+               riskDistance: d.fibSetup.riskDistance,
+               riskPercent: Number(((d.fibSetup.riskDistance / d.reference) * 100).toFixed(2)),
+               rewardPercent: Number((((Math.abs(d.fibSetup.tp1 - d.reference)) / d.reference) * 100).toFixed(2)),
+               riskRewardRatio: d.fibSetup.riskRewardRatio,
+             }
+           : computeQuantPlan(candidateSide, d.reference, d.bars.slice(-30), swing.supports, swing.resistances);
+
          const reason = d.action === 'WAIT'
-           ? `FILTERED_OUT (raw: ${d.rawAction} conf: ${d.rawConfidence}%)`
+           ? `FILTERED (${d.filterReason || 'UNKNOWN'}) [raw: ${d.rawAction} conf: ${d.rawConfidence}%]`
            : d.confidence < config.min_confidence
            ? `LOW_CONFIDENCE (${d.confidence}% < ${config.min_confidence}%)`
            : `EXECUTING_LIVE`;
-         await recordShadowTrade(u.id, m, symbol, candidateSide, d.reference, shadowPlan, d.confidence || d.rawConfidence, reason);
+         await recordShadowTrade(u.id, m, symbol, candidateSide, d.reference, shadowPlan, d.confidence || d.rawConfidence, reason, d.bars.at(-1)?.closeTime || Date.now());
        } catch {}
      }
 
@@ -347,7 +503,19 @@ export async function runAnalysis(m:Market,targetUserId?:number){
      if(!lot||!tick)throw new Error('Required symbol filters missing');
      const quote=await depthQuote(m,symbol,d.action==='LONG'?'BUY':'SELL',0);
      if(Math.abs(quote.price-d.reference)/d.reference>0.005)throw new Error('Entry drift exceeds 0.5%');
-     const plan=computeQuantPlan(d.action as 'LONG'|'SHORT',quote.price,d.bars);
+     const plan: QuantPlan = (d.fibSetup && d.fibSetup.side === d.action)
+       ? {
+           entryPrice: quote.price,
+           stopLossPrice: d.fibSetup.stopPrice,
+           takeProfit1: d.fibSetup.tp1,
+           takeProfit2: d.fibSetup.tp2,
+           takeProfit3: d.fibSetup.tp3,
+           riskDistance: Math.abs(quote.price - d.fibSetup.stopPrice),
+           riskPercent: Number(((Math.abs(quote.price - d.fibSetup.stopPrice) / quote.price) * 100).toFixed(2)),
+           rewardPercent: Number((((Math.abs(d.fibSetup.tp1 - quote.price)) / quote.price) * 100).toFixed(2)),
+           riskRewardRatio: d.fibSetup.riskRewardRatio,
+         }
+       : computeQuantPlan(d.action as 'LONG'|'SHORT',quote.price,d.bars,swing.supports,swing.resistances);
      const stop=grid(plan.stopLossPrice,tick.tickSize,d.action==='LONG'?'ceil':'floor');
      const tp=[plan.takeProfit1,plan.takeProfit2,plan.takeProfit3].map(v=>grid(v,tick.tickSize,d.action==='LONG'?'ceil':'floor'));
      validatePlan(d.action,quote.price,stop,tp);

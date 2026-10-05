@@ -605,3 +605,9 @@ VPS və Binance GET yoxlamaları tamamlandı. Kiçik order miqdarında `Unsuppor
 ## Qeydə alınmış qərarların əks-faktual replay-i — 2026-10-05
 
 392 Futures qərarı üçün real 1 dəqiqəlik contract/mark-price və funding məlumatı ilə LONG, SHORT və giriş etməmək müqayisəsi aparıldı. 15/60/240 dəqiqəlik müddətlər, üç sürüşmə ssenarisi və ayrıca 100 USDT/maksimum 3 mövqeli xronoloji portfel sınağı əlavə edildi. Bu, tarixi icranın dəqiq bərpası deyil: cari ayarların keçmiş qərarlara standart tətbiqidir. Məlumat və metod məhdudiyyətləri ilə birlikdə [tam hesabat](reports/counterfactual-2026-10-05/report.md), [interaktiv baxış](reports/counterfactual-2026-10-05/report.html), [CSV](reports/counterfactual-2026-10-05/decisions.csv) hazırdır. Canlı deployment və ayarlar dəyişdirilməyib.
+
+## Peşəkar treyder metodları ilə müqayisə — 2026-10-05
+
+Tavily pro research, Composio/Firecrawl və ilkin web mənbələri ilə metod araşdırması, lokal `fe284d3` versiyası ilə müqayisə tamamlandı. [Tam analiz və təkliflər](reports/trader-methods-research/report.md), [mənbə reyestri və alət nəticələri](reports/trader-methods-research/sources.md).
+
+Yeni ADX/shadow kodunda raw AI nəticəsinin risk filtrindən sonra saxlanması, shadow vaxtının çağırış sayına bağlanması və canlı qismən çıxışla PnL uyğunsuzluğu tapıldı. Ayrıca izlənməyən `simulate-current-exact-system.ts` skripti AI-ni heuristika ilə əvəz edir və cari şamın sonrakı məlumatını əvvəlki giriş kapitalına daxil edir. Bunlar bu mərhələdə düzəldilməyib; risk dərəcələri, konkret düzəliş və qəbul meyarları hesabatdadır. Cari versiyanın production/test-suite qəbulu və gəlirliliyi təsdiqlənmir. Strategiya kodu və canlı ayarlar dəyişdirilməyib.

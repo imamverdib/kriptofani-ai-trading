@@ -4,6 +4,7 @@ export interface TypeSafeDecision {
   confidence: number; // 0 to 100
   trendStrength: number; // 0 to 2
   isHighRisk: boolean;
+  riskNoul?: number;
   probabilities: Record<string, number>;
   latencyMs: number;
 }
@@ -99,6 +100,7 @@ export async function evaluateWithJev(marketState: string): Promise<TypeSafeDeci
       confidence,
       trendStrength,
       isHighRisk,
+      riskNoul: riskAns.noul || 0,
       probabilities: actionAns.probabilities || {},
       latencyMs
     };

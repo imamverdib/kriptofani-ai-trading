@@ -244,8 +244,12 @@ export function getDb(): sqlite3.Database {
           tp3 REAL NOT NULL,
           confidence INTEGER NOT NULL,
           state TEXT NOT NULL DEFAULT 'OPEN',
+          stage INTEGER NOT NULL DEFAULT 0,
+          remaining_ratio REAL NOT NULL DEFAULT 1.0,
+          trailing_stop REAL NOT NULL DEFAULT 0,
           max_bars INTEGER NOT NULL DEFAULT 16,
           bars_held INTEGER NOT NULL DEFAULT 0,
+          last_candle_time BIGINT NOT NULL DEFAULT 0,
           high_water REAL NOT NULL DEFAULT 0,
           simulated_pnl REAL NOT NULL DEFAULT 0,
           created_at INTEGER NOT NULL,
@@ -253,6 +257,10 @@ export function getDb(): sqlite3.Database {
           reason TEXT
         )
       `);
+      db!.run(`ALTER TABLE shadow_positions ADD COLUMN stage INTEGER NOT NULL DEFAULT 0`, () => {});
+      db!.run(`ALTER TABLE shadow_positions ADD COLUMN remaining_ratio REAL NOT NULL DEFAULT 1.0`, () => {});
+      db!.run(`ALTER TABLE shadow_positions ADD COLUMN trailing_stop REAL NOT NULL DEFAULT 0`, () => {});
+      db!.run(`ALTER TABLE shadow_positions ADD COLUMN last_candle_time BIGINT NOT NULL DEFAULT 0`, () => {});
       db!.run(`CREATE INDEX IF NOT EXISTS shadow_state_idx ON shadow_positions(market,state)`);
       db!.run(`CREATE INDEX IF NOT EXISTS shadow_user_time ON shadow_positions(user_id,created_at)`);
 
