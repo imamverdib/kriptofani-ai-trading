@@ -16,7 +16,15 @@ const AVAILABLE_COINS = [
 export default function FuturesDashboard() {
 
 
-  const [stats, setStats] = useState({ balance: 0, openPositionCount: 0, totalPnl: 0, todaysPnl: 0 });
+  const [stats, setStats] = useState<{
+    balance: number;
+    openPositionCount: number;
+    totalPnl: number;
+    todaysPnl: number;
+    totalPortfolio?: number | null;
+    spotBalance?: number;
+    futuresBalance?: number;
+  }>({ balance: 0, openPositionCount: 0, totalPnl: 0, todaysPnl: 0, totalPortfolio: null });
   const [openPositions, setOpenPositions] = useState<OpenPositionView[]>([]);
   const [recentClosed, setRecentClosed] = useState<ClosedPositionView[]>([]);
   const [auditWarnings, setAuditWarnings] = useState<string[]>([]);
@@ -294,7 +302,7 @@ export default function FuturesDashboard() {
         <div className="glass-panel" style={{ padding: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              Ümumi hesab kapitalı
+              Futures Balansı
               <button onClick={fetchDashboardData} disabled={loading} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '4px', cursor: loading ? 'not-allowed' : 'pointer', padding: '4px', display: 'flex', alignItems: 'center', color: 'var(--text-primary)', opacity: loading ? 0.5 : 1 }}>
                 <RefreshCw size={14} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
               </button>
@@ -303,6 +311,9 @@ export default function FuturesDashboard() {
           </div>
           <div style={{ fontSize: '2rem', fontWeight: 700 }}>
             {loading ? '...' : `$${stats.balance?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '—'}`}
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '6px', fontWeight: 500 }}>
+            Ümumi Portfel: {stats.totalPortfolio !== undefined && stats.totalPortfolio !== null ? `$${stats.totalPortfolio.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
           </div>
         </div>
 

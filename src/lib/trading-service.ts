@@ -30,7 +30,7 @@ export async function accountSnapshot(userId:number){
  if(new Set(keys.map(k=>k.uid)).size!==1)throw new Error('Spot/futures account identity differs');
  if(keys.some(k=>k.market==='futures')&&!keys.some(k=>k.market==='spot'))throw new Error('Register the same account Spot API to include both wallets in equity');
  const inventory:Inventory={};
- let equity=0;const available:Partial<Record<Market,number>>={};
+ let equity=0;let spotEquity=0;let futuresEquity=0;const available:Partial<Record<Market,number>>={};
  for(const row of keys){
   const m=row.market as Market,c=await credentials(userId,m);
   if(m==='futures'){
@@ -40,13 +40,14 @@ export async function accountSnapshot(userId:number){
    if(a.positions.some(p=>Number(p.positionAmt)!==0&&!owned.some(o=>o.symbol===p.symbol)))throw new Error('Unmanaged futures exposure requires operator reconciliation');
    const value=Number(a.totalMarginBalance);if(!Number.isFinite(value)||value<0)throw new Error('Invalid futures equity');
    const wallet=Number(a.totalWalletBalance);if(!Number.isFinite(wallet))throw new Error('Futures wallet balance unavailable');inventory.USDT=(inventory.USDT||0)+wallet;
+   futuresEquity+=value;
    equity+=value;available[m]=Number(a.availableBalance);
    await syncIncome(userId,c);
   }else{
    const a=await exchange<SpotAccount>(m,'/api/v3/account',{},c,'GET',{priority:true});
    for(const b of a.balances){const qty=Number(b.free)+Number(b.locked);if(!Number.isFinite(qty)||qty<0)throw new Error('Invalid spot inventory');if(qty<=0)continue;inventory[b.asset]=(inventory[b.asset]||0)+qty;
-    if(b.asset==='USDT'){equity+=qty;available.spot=Number(b.free)}
-    else {equity+=qty*await price('spot',`${b.asset}USDT`)}
+    if(b.asset==='USDT'){spotEquity+=qty;equity+=qty;available.spot=Number(b.free)}
+    else {const p=await price('spot',`${b.asset}USDT`);spotEquity+=qty*p;equity+=qty*p}
    }
   }
  }
@@ -60,12 +61,12 @@ export async function accountSnapshot(userId:number){
   const old=await sql.get<RiskRow>('SELECT * FROM risk_state WHERE user_id=?',[userId]);
   const result=equityRisk(old?.day?{highWater:old.high_water,dayStart:old.day_start,day:old.day,flowTotal:old.flow_total}:undefined,equity,Number(flows?.total??0),day);
   const reason=old?.frozen_reason||result.reason;
-  await sql.run(`INSERT INTO risk_state(user_id,high_water,day_start,day,equity,frozen_reason,updated_at,flow_total) VALUES (?,?,?,?,?,?,?,?)
-   ON CONFLICT(user_id) DO UPDATE SET high_water=excluded.high_water,day_start=excluded.day_start,day=excluded.day,equity=excluded.equity,frozen_reason=excluded.frozen_reason,updated_at=excluded.updated_at,flow_total=excluded.flow_total`,
-   [userId,result.highWater,result.dayStart,day,equity,reason,now,Number(flows?.total??0)]);
-  await sql.run('INSERT OR REPLACE INTO equity_snapshots VALUES (?,?,?)',[userId,now,equity]);return {equity,highWater:result.highWater,drawdown:result.drawdown,frozenReason:reason};
+  await sql.run(`INSERT INTO risk_state(user_id,high_water,day_start,day,equity,frozen_reason,updated_at,flow_total,spot_equity,futures_equity) VALUES (?,?,?,?,?,?,?,?,?,?)
+   ON CONFLICT(user_id) DO UPDATE SET high_water=excluded.high_water,day_start=excluded.day_start,day=excluded.day,equity=excluded.equity,frozen_reason=excluded.frozen_reason,updated_at=excluded.updated_at,flow_total=excluded.flow_total,spot_equity=excluded.spot_equity,futures_equity=excluded.futures_equity`,
+   [userId,result.highWater,result.dayStart,day,equity,reason,now,Number(flows?.total??0),spotEquity,futuresEquity]);
+  await sql.run('INSERT OR REPLACE INTO equity_snapshots VALUES (?,?,?)',[userId,now,equity]);return {equity,highWater:result.highWater,drawdown:result.drawdown,frozenReason:reason,spot_equity:spotEquity,futures_equity:futuresEquity};
  });
- return {...risk,available};
+ return {...risk,available,spot_equity:spotEquity,futures_equity:futuresEquity};
 }
 async function syncExternalFlows(userId:number,uid:string,c:Credentials,includeFutures:boolean){
  const now=Date.now();const cursor=await read(sql=>sql.get<{start_time:number;synced_until:number}>('SELECT * FROM flow_cursors WHERE uid=? AND user_id=?',[uid,userId]));

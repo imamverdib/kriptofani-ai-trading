@@ -42,6 +42,8 @@ export function initTradingStore() {
       if(!intentCols.some(c=>c.name==='reconciled'))await sql.run('ALTER TABLE order_intents ADD COLUMN reconciled INTEGER NOT NULL DEFAULT 0');
       const riskCols=await sql.all<{name:string}>('PRAGMA table_info(risk_state)');
       if(!riskCols.some(c=>c.name==='flow_total'))await sql.run('ALTER TABLE risk_state ADD COLUMN flow_total REAL NOT NULL DEFAULT 0');
+      if(!riskCols.some(c=>c.name==='spot_equity'))await sql.run('ALTER TABLE risk_state ADD COLUMN spot_equity REAL NOT NULL DEFAULT 0');
+      if(!riskCols.some(c=>c.name==='futures_equity'))await sql.run('ALTER TABLE risk_state ADD COLUMN futures_equity REAL NOT NULL DEFAULT 0');
       const outboxCols=await sql.all<{name:string}>('PRAGMA table_info(notification_outbox)');
       if(!outboxCols.some(c=>c.name==='last_error'))await sql.run('ALTER TABLE notification_outbox ADD COLUMN last_error TEXT');
       await sql.run('COMMIT');
@@ -108,7 +110,7 @@ const schema=[
  commission_asset TEXT NOT NULL, fee_usdt REAL, realized_pnl REAL NOT NULL, time INTEGER NOT NULL,
  PRIMARY KEY(user_id,market,symbol,trade_id), FOREIGN KEY(position_id,user_id) REFERENCES managed_positions(id,user_id))`,
 `CREATE TABLE IF NOT EXISTS income_ledger (user_id INTEGER NOT NULL REFERENCES users(id), type TEXT NOT NULL, id TEXT NOT NULL, asset TEXT NOT NULL, amount REAL NOT NULL, time INTEGER NOT NULL, PRIMARY KEY(user_id,type,id,asset))`,
-`CREATE TABLE IF NOT EXISTS risk_state (user_id INTEGER PRIMARY KEY REFERENCES users(id), high_water REAL NOT NULL, day_start REAL NOT NULL, day TEXT NOT NULL, equity REAL NOT NULL, frozen_reason TEXT, updated_at INTEGER NOT NULL)`,
+`CREATE TABLE IF NOT EXISTS risk_state (user_id INTEGER PRIMARY KEY REFERENCES users(id), high_water REAL NOT NULL, day_start REAL NOT NULL, day TEXT NOT NULL, equity REAL NOT NULL, frozen_reason TEXT, updated_at INTEGER NOT NULL, flow_total REAL NOT NULL DEFAULT 0, spot_equity REAL NOT NULL DEFAULT 0, futures_equity REAL NOT NULL DEFAULT 0)`,
 `CREATE TABLE IF NOT EXISTS equity_snapshots (user_id INTEGER NOT NULL REFERENCES users(id), time INTEGER NOT NULL, equity REAL NOT NULL, PRIMARY KEY(user_id,time))`,
 `CREATE TABLE IF NOT EXISTS decision_snapshots (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), market TEXT NOT NULL, symbol TEXT NOT NULL, version TEXT NOT NULL, time INTEGER NOT NULL, snapshot TEXT NOT NULL, decision TEXT NOT NULL)`,
 `CREATE TABLE IF NOT EXISTS trading_jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, user_id INTEGER NOT NULL DEFAULT 0, state TEXT NOT NULL, created_at INTEGER NOT NULL, started_at INTEGER, finished_at INTEGER, error TEXT)`,

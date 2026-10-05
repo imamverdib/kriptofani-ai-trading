@@ -15,11 +15,20 @@ const AVAILABLE_COINS = [
 
 export default function Dashboard() {
   const { t } = useLanguage();
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<{
+    balance: number;
+    openPositions: number;
+    totalProfit: number;
+    todaysProfit: number;
+    totalPortfolio?: number | null;
+    spotBalance?: number;
+    futuresBalance?: number;
+  }>({
     balance: 0,
     openPositions: 0,
     totalProfit: 0,
     todaysProfit: 0,
+    totalPortfolio: null,
   });
   
   const [recentTrades, setRecentTrades] = useState<SpotTradeView[]>([]);
@@ -325,7 +334,7 @@ export default function Dashboard() {
         <div className="glass-panel" style={{ padding: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
             <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              Ümumi Spot Dəyəri
+              Spot Balansı
               <button 
                 onClick={fetchDashboardData} 
                 disabled={loading} 
@@ -349,7 +358,10 @@ export default function Dashboard() {
             <Wallet size={20} className="text-gradient" />
           </div>
           <div style={{ fontSize: '2rem', fontWeight: 700 }}>
-            {loading ? '...' : `$${stats.balance?.toLocaleString() ?? '—'}`}
+            {loading ? '...' : `$${stats.balance !== undefined && stats.balance !== null ? (stats.balance > 0 && stats.balance < 0.01 ? stats.balance.toFixed(4) : stats.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })) : '—'}`}
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '6px', fontWeight: 500 }}>
+            Ümumi Portfel: {stats.totalPortfolio !== undefined && stats.totalPortfolio !== null ? `$${stats.totalPortfolio.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
           </div>
         </div>
 

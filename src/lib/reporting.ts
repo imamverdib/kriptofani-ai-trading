@@ -3,6 +3,14 @@ import type {Position} from './execution';
 import { read,type Market } from './trading-store';
 import { price } from './exchange-client';
 import { grossPnl } from './trading-math';
+function getMarketBalance(risk: RiskRow | undefined, market: Market): number | null {
+ if (!risk) return null;
+ const hasSplit = (risk.spot_equity ?? 0) > 0 || (risk.futures_equity ?? 0) > 0;
+ if (hasSplit) {
+  return market === 'spot' ? (risk.spot_equity ?? 0) : (risk.futures_equity ?? 0);
+ }
+ return risk.equity ?? null;
+}
 export async function tradingReport(userId:number,market:Market){
  const rows=await read(sql=>sql.all<Position & {total_pnl:number;missing_fees:number}>(`SELECT p.*,COALESCE(SUM(f.realized_pnl-COALESCE(f.fee_usdt,0)),0) AS total_pnl,
  SUM(CASE WHEN f.fee_usdt IS NULL AND f.trade_id IS NOT NULL THEN 1 ELSE 0 END) AS missing_fees
@@ -28,5 +36,5 @@ export async function tradingReport(userId:number,market:Market){
   let currentPrice:number|null=null;try{currentPrice=await price(market,p.symbol)}catch{warnings.push(`${p.symbol}: live mark unavailable`)}
   return {...p,entry_reason:p.reason,trailing_stop_price:p.stage>=2?(p.side==='LONG'?Math.max(p.entry_price,p.high_water*0.985):Math.min(p.entry_price,p.high_water*1.015)):p.entry_price,status:p.state,stop_loss_price:p.stop_price,take_profit_1:p.tp1,take_profit_2:p.tp2,take_profit_3:p.tp3,tp1_filled:Number(p.stage>=1),tp2_filled:Number(p.stage>=2),tp3_filled:Number(p.stage>=3),trailing_active:Number(p.stage>=2),highest_price:p.high_water,lowest_price:p.high_water,currentPrice,unrealizedPnl:currentPrice===null?null:grossPnl(p.side,p.entry_price,currentPrice,p.remaining_qty),created_at:new Date(p.created_at).toISOString()};
  }));
- return {rows,openPositions,warnings:[...new Set(warnings)],risk,stats:{balance:risk?.equity??null,openPositionCount:openPositions.length,totalPnl:Number(totals?.total||0)+Number(funding?.total||0),todaysPnl:Number(totals?.today||0)+Number(funding?.today||0),pnlComplete:!totals?.missing,balanceUpdatedAt:risk?.updated_at||null},recentClosed:rows.filter(p=>['CLOSED','DUST'].includes(p.state)).slice(0,10).map(p=>({id:p.id,symbol:p.symbol,side:p.side,entryPrice:p.entry_price,leverage:p.leverage,totalPnl:p.total_pnl,createdAt:new Date(p.created_at).toISOString(),closedAt:p.closed_at?new Date(p.closed_at).toISOString():null}))};
+ return {rows,openPositions,warnings:[...new Set(warnings)],risk,stats:{balance:getMarketBalance(risk,market),totalPortfolio:risk?.equity??null,spotBalance:risk?.spot_equity??0,futuresBalance:risk?.futures_equity??0,openPositionCount:openPositions.length,totalPnl:Number(totals?.total||0)+Number(funding?.total||0),todaysPnl:Number(totals?.today||0)+Number(funding?.today||0),pnlComplete:!totals?.missing,balanceUpdatedAt:risk?.updated_at||null},recentClosed:rows.filter(p=>['CLOSED','DUST'].includes(p.state)).slice(0,10).map(p=>({id:p.id,symbol:p.symbol,side:p.side,entryPrice:p.entry_price,leverage:p.leverage,totalPnl:p.total_pnl,createdAt:new Date(p.created_at).toISOString(),closedAt:p.closed_at?new Date(p.closed_at).toISOString():null}))};
 }

@@ -77,16 +77,26 @@ export async function processUserCommand(user: AppUser, chatId: string, text: st
   }
   else if (command === '/status') {
     const config = await getOrCreateConfig(user.id);
-    let balance: number | null = null;
-    let balanceErr = '';
+    const risk = await dbGet<{equity: number; spot_equity: number; futures_equity: number}>('SELECT equity, spot_equity, futures_equity FROM risk_state WHERE user_id = ?', [user.id]);
+    
+    let spotBalanceStr = 'Məlumat tapılmadı';
+    let futuresBalanceStr = 'Məlumat tapılmadı';
+    let totalPortfolioStr = 'Məlumat tapılmadı';
 
-    if (user.binance_api_key && user.binance_api_secret) {
+    if (risk && ((risk.spot_equity ?? 0) > 0 || (risk.futures_equity ?? 0) > 0 || (risk.equity ?? 0) > 0)) {
+      const spotVal = risk.spot_equity ?? 0;
+      spotBalanceStr = `$${spotVal > 0 && spotVal < 0.01 ? spotVal.toFixed(4) : spotVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      futuresBalanceStr = `$${(risk.futures_equity ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      totalPortfolioStr = `$${(risk.equity ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    } else if (user.binance_api_key && user.binance_api_secret) {
       try {
         const apiKey = decrypt(user.binance_api_key, `${user.id}:spot:key`);
         const apiSecret = decrypt(user.binance_api_secret, `${user.id}:spot:secret`);
-        balance = await fetchBinanceBalance(apiKey, apiSecret);
+        const bal = await fetchBinanceBalance(apiKey, apiSecret);
+        spotBalanceStr = `$${bal.toLocaleString()}`;
+        totalPortfolioStr = `$${bal.toLocaleString()}`;
       } catch {
-        balanceErr = ' (Binance API xətası)';
+        spotBalanceStr = 'Binance API xətası';
       }
     }
 
@@ -105,7 +115,9 @@ export async function processUserCommand(user: AppUser, chatId: string, text: st
 🟢 *Ümumi Status:* ${user.is_active === 1 ? 'Aktiv (Ticarət Gedir)' : 'Pauza (Deaktiv)'}
 📊 *Spot Panel:* ${spotActive ? '🟢 Aktiv (1h rutin)' : '🔴 Deaktiv'}
 ⚡ *Futures Panel:* ${futuresActive ? '🟢 Aktiv (15m rutin)' : '🔴 Deaktiv'}
-💰 *Spot Balansı:* ${balance !== null ? `$${balance.toLocaleString()}` : 'Məlumat tapılmadı' + balanceErr}
+💰 *Spot Balansı:* ${spotBalanceStr}
+💰 *Futures Balansı:* ${futuresBalanceStr}
+💼 *Ümumi Portfel:* ${totalPortfolioStr}
 📈 *Spot Risk Limiti:* %${config.max_risk_pct}
 🪙 *Hədəf Koinlər:* ${formattedCoins}`;
 
