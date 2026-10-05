@@ -597,3 +597,7 @@ Son kod mərhələsində əvvəl qeyd olunan 43 tip xətası bağlandı, wallet 
 ## İki hesab üçün cari hazırlıq
 
 İki hesab limiti/admission, ayrı monitor və analiz icrası, açar üzrə müvəqqəti API bloklanması, hər hesabın health xəbərdarlığı və private onboarding tamamlandı. 54 test və ayrıca production build üzərində iki sessiyalı HTTP qəbul keçdi. Cari qurulma və real/demo test siyahısı: [two-account-readiness.md](docs/two-account-readiness.md). Real hesab bağlantısı, operator sirlərinin konfiqurasiyası və canlı qəbul bu offline mərhələdə edilməyib.
+
+## Canlı hesab yoxlaması — 2026-10-05
+
+VPS və Binance GET yoxlamaları tamamlandı. Kiçik order miqdarında `Unsupported precision` yaradan decimal-grid xətası düzəldildi, 58 test/lint/TypeScript keçdi və düzəliş VPS-də build/deploy edilərək healthy statusu təsdiqləndi. Cari 100 USDT balans və ayarlarla BTC/ETH minimum order məbləğinə çatmır; digər beş yoxlanmış simvol allocation üzrə minimum həddi keçir. Telegram-da köhnə ünvana aid uğursuz bildiriş ayrıca qeyd edildi, cari chat işləyir. Sübutlar, məhdudiyyətlər və qalan native order/stop qəbulu [live-readiness-2026-10-05.md](docs/live-readiness-2026-10-05.md) faylındadır.

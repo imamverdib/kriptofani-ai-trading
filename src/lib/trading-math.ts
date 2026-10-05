@@ -8,17 +8,20 @@ export function grid(value: number, step: number | string, mode: 'floor' | 'ceil
   if (!Number.isFinite(value) || value < 0) throw new Error('Invalid grid value');
   const s = positive(step, 'step');
   // Decimal string arithmetic retains non-power-of-ten grids such as 0.25.
-  const decimals = (v: string) => { const [a,e='0'] = v.toLowerCase().split('e'); return Math.max(0,(a.split('.')[1]?.length || 0)-Number(e)); };
-  const scale = Math.max(decimals(String(value)), decimals(String(step)));
-  if (scale > 18) throw new Error('Unsupported precision');
-  const unit = BigInt(10) ** BigInt(scale);
-  const integer = (v: number) => BigInt(v.toFixed(scale).replace('.', ''));
-  const vi = integer(value), si = integer(s);
+  const decimal = (n: number) => {
+    const [mantissa, exponent = '0'] = String(n).toLowerCase().split('e');
+    const [whole, fraction = ''] = mantissa.split('.');
+    return {digits: BigInt(whole + fraction), scale: fraction.length - Number(exponent)};
+  };
+  const v = decimal(value), stepValue = decimal(s);
+  const scale = Math.max(0, v.scale, stepValue.scale);
+  const vi = v.digits * BigInt(10) ** BigInt(scale - v.scale);
+  const si = stepValue.digits * BigInt(10) ** BigInt(scale - stepValue.scale);
   if (si <= BigInt(0)) throw new Error('Invalid step');
   let ticks = vi / si;
   const remainder = vi % si;
   if ((mode === 'ceil' && remainder > BigInt(0)) || (mode === 'round' && remainder * BigInt(2) >= si)) ticks++;
-  return Number(ticks * si) / Number(unit);
+  return Number(`${ticks * si}e-${scale}`);
 }
 export function grossPnl(side: string, entry: number, exit: number, quantity: number): number {
   return (side === 'LONG' || side === 'BUY' ? 1 : -1) * (exit - entry) * quantity;
