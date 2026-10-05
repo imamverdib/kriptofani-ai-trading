@@ -209,7 +209,7 @@ export function getDb(): sqlite3.Database {
           max_risk_pct REAL DEFAULT 2,
           max_open_positions INTEGER DEFAULT 3,
           leverage INTEGER DEFAULT 5,
-          min_confidence INTEGER DEFAULT 75,
+          min_confidence INTEGER DEFAULT 70,
           target_coins TEXT DEFAULT 'AUTO',
           blacklist_coins TEXT DEFAULT '',
           auto_coin_count INTEGER DEFAULT 7,
@@ -228,6 +228,34 @@ export function getDb(): sqlite3.Database {
       db!.run(`ALTER TABLE users ADD COLUMN futures_api_key TEXT`, () => {});
       db!.run(`ALTER TABLE users ADD COLUMN futures_api_secret TEXT`, () => {});
       db!.run(`ALTER TABLE users ADD COLUMN last_futures_force_run INTEGER DEFAULT 0`, () => {});
+
+      // Shadow positions table for counterfactual analysis and real-time paper trading
+      db!.run(`
+        CREATE TABLE IF NOT EXISTS shadow_positions (
+          id TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id),
+          market TEXT NOT NULL CHECK(market IN ('spot','futures')),
+          symbol TEXT NOT NULL,
+          side TEXT NOT NULL,
+          entry_price REAL NOT NULL,
+          stop_price REAL NOT NULL,
+          tp1 REAL NOT NULL,
+          tp2 REAL NOT NULL,
+          tp3 REAL NOT NULL,
+          confidence INTEGER NOT NULL,
+          state TEXT NOT NULL DEFAULT 'OPEN',
+          max_bars INTEGER NOT NULL DEFAULT 16,
+          bars_held INTEGER NOT NULL DEFAULT 0,
+          high_water REAL NOT NULL DEFAULT 0,
+          simulated_pnl REAL NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL,
+          closed_at INTEGER,
+          reason TEXT
+        )
+      `);
+      db!.run(`CREATE INDEX IF NOT EXISTS shadow_state_idx ON shadow_positions(market,state)`);
+      db!.run(`CREATE INDEX IF NOT EXISTS shadow_user_time ON shadow_positions(user_id,created_at)`);
+
       db!.run('SELECT 1', () => { db!.run = rawRun as sqlite3.Database['run']; finishInitialization(); });
     });
   }

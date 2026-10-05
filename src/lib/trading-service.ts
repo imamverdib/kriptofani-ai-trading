@@ -11,7 +11,7 @@ import { decrypt } from './encryption';
 import { read, transaction, type Market } from './trading-store';
 import { exchange, exchangeInfo, klines, price, depthQuote, ExchangeError, type Credentials } from './exchange-client';
 import { accountOwner, assertEntryEnabled, freeze, gateway, monitorPosition, positions, reserve, openPosition } from './execution';
-import { computeQuantPlan } from './quant-math';
+import { computeQuantPlan, detectMarketRegime, type QuantPlan } from './quant-math';
 import { grid, normalizeSymbols, positive, sizePosition, validatePlan, utcTime } from './trading-math';
 import { evaluateWithJev, isTypeSafeConfigured } from './typesafe';
 
@@ -124,7 +124,8 @@ async function decide(m:Market,symbol:string,userId:number){
  const a=sma({values:hc,period:20}).at(-1)!,b=sma({values:hc,period:50}).at(-1)!;
  const trend=a>b?'LONG':a<b?'SHORT':'WAIT';
  const oscillator=rsi({values:closes,period:14}).at(-1)!;
- const snapshot={symbol,market:m,asOf:Date.now(),barClose:bars.at(-1)!.closeTime,trend,rsi:oscillator,bars,higher};
+ const regimeInfo=detectMarketRegime(bars,14);
+ const snapshot={symbol,market:m,asOf:Date.now(),barClose:bars.at(-1)!.closeTime,trend,rsi:oscillator,regime:regimeInfo.regime,adx:regimeInfo.adx,trendDirection:regimeInfo.trendDirection,bars,higher};
  let action='WAIT',confidence=0,provider='none';
  // AI proposes direction only. Sizing, stop placement and validation are deterministic.
  if(isTypeSafeConfigured()){
@@ -132,14 +133,28 @@ async function decide(m:Market,symbol:string,userId:number){
   if(!d.isHighRisk){action=d.action;confidence=d.confidence}provider=process.env.TYPESAFE_MODEL||'jev-latest';
  }else if(process.env.GEMINI_API_KEY){
   const model=new GoogleGenerativeAI(process.env.GEMINI_API_KEY).getGenerativeModel({model:process.env.GEMINI_MODEL||'gemini-2.5-flash',generationConfig:{temperature:0,responseMimeType:'application/json',responseSchema:{type:SchemaType.OBJECT,properties:{action:{type:SchemaType.STRING,format:'enum',enum:['LONG','SHORT','WAIT']},confidence:{type:SchemaType.INTEGER}},required:['action','confidence']}}});
-  const result=await model.generateContent(`Choose LONG, SHORT or WAIT using only this closed-candle snapshot. Confidence is model confidence, not probability of profit. Only trade aligned with the higher timeframe. ${JSON.stringify(snapshot)}`,{timeout:10000});
+  const result=await model.generateContent(`Choose LONG, SHORT or WAIT using only this closed-candle snapshot. Market regime is ${regimeInfo.regime} (ADX: ${regimeInfo.adx}). Confidence is model confidence, not probability of profit. Only trade aligned with the higher timeframe. ${JSON.stringify(snapshot)}`,{timeout:10000});
   const d=JSON.parse(result.response.text());action=d.action;confidence=d.confidence;provider=process.env.GEMINI_MODEL||'gemini-2.5-flash';
  }else throw new Error('Decision provider not configured');
  if(!['LONG','SHORT','WAIT'].includes(action)||!Number.isInteger(confidence)||confidence<0||confidence>100)throw new Error('Invalid model response');
- if(action!==trend||(action==='LONG'&&oscillator>65)||(action==='SHORT'&&oscillator<35)||(m==='spot'&&action==='SHORT'))action='WAIT';
+ 
+ const rawAction = action;
+ const rawConfidence = confidence;
+
+ // Dynamic Market Regime & Confluence Filter
+ const isTrending = regimeInfo.regime !== 'RANGING';
+ if (isTrending) {
+   if (action !== trend) action = 'WAIT';
+   if ((action === 'LONG' && oscillator > 70) || (action === 'SHORT' && oscillator < 30)) action = 'WAIT';
+ } else {
+   if ((action === 'LONG' && oscillator > 60) || (action === 'SHORT' && oscillator < 40)) action = 'WAIT';
+   if (action !== trend && (oscillator >= 35 && oscillator <= 65)) action = 'WAIT';
+ }
+ if (m === 'spot' && action === 'SHORT') action = 'WAIT';
+
  const id=randomUUID();
- await transaction(sql=>sql.run('INSERT INTO decision_snapshots VALUES (?,?,?,?,?,?,?,?)',[id,userId,m,symbol,`risk-v2:${provider}`,Date.now(),JSON.stringify(snapshot),JSON.stringify({action,confidence})]));
- return {id,action,confidence,bars,time:snapshot.asOf,reference:bars.at(-1)!.close};
+ await transaction(sql=>sql.run('INSERT INTO decision_snapshots VALUES (?,?,?,?,?,?,?,?)',[id,userId,m,symbol,`risk-v2:${provider}`,Date.now(),JSON.stringify(snapshot),JSON.stringify({action,confidence,rawAction,rawConfidence,regime:regimeInfo.regime,adx:regimeInfo.adx})]));
+ return {id,action,confidence,rawAction,rawConfidence,bars,time:snapshot.asOf,reference:bars.at(-1)!.close,regimeInfo};
 }
 async function feeRate(m:Market,symbol:string,c:Credentials){
  if(m==='futures'){const d=await exchange(m,'/fapi/v1/commissionRate',{symbol},c);const rate=Number(d.takerCommissionRate);if(!Number.isFinite(rate)||rate<0)throw new Error('Invalid taker rate');return rate}
@@ -163,7 +178,138 @@ async function futuresPreflight(symbol:string,c:Credentials,leverage:number,noti
  const verified=await exchange<ExchangePosition[]>('futures','/fapi/v2/positionRisk',{symbol},c);
  if(!verified.every(p=>p.marginType==='isolated'||p.isolated===true||p.isolated==='true'))throw new Error('ISOLATED margin not confirmed');
 }
+
+export async function recordShadowTrade(
+  userId: number,
+  market: Market,
+  symbol: string,
+  side: 'LONG' | 'SHORT',
+  entryPrice: number,
+  plan: QuantPlan,
+  confidence: number,
+  reason: string
+) {
+  try {
+    const id = randomUUID();
+    await transaction(sql => sql.run(
+      `INSERT INTO shadow_positions (id, user_id, market, symbol, side, entry_price, stop_price, tp1, tp2, tp3, confidence, state, max_bars, bars_held, high_water, simulated_pnl, created_at, reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', 16, 0, ?, 0, ?, ?)`,
+      [id, userId, market, symbol, side, entryPrice, plan.stopLossPrice, plan.takeProfit1, plan.takeProfit2, plan.takeProfit3, confidence, entryPrice, Date.now(), reason]
+    ));
+  } catch (err) {
+    console.error(`[ShadowTrade] Failed to record shadow position for ${symbol}:`, err);
+  }
+}
+
+export async function updateShadowPositions(m: Market) {
+  try {
+    const openShadows = await read(sql =>
+      sql.all<{
+        id: string;
+        user_id: number;
+        symbol: string;
+        side: 'LONG' | 'SHORT';
+        entry_price: number;
+        stop_price: number;
+        tp1: number;
+        tp2: number;
+        tp3: number;
+        confidence: number;
+        state: string;
+        max_bars: number;
+        bars_held: number;
+        high_water: number;
+        simulated_pnl: number;
+        created_at: number;
+      }>('SELECT * FROM shadow_positions WHERE market=? AND state="OPEN"', [m])
+    );
+
+    if (!openShadows.length) return;
+
+    const bySymbol = new Map<string, typeof openShadows>();
+    for (const pos of openShadows) {
+      const list = bySymbol.get(pos.symbol) || [];
+      list.push(pos);
+      bySymbol.set(pos.symbol, list);
+    }
+
+    const now = Date.now();
+    for (const [sym, posList] of bySymbol.entries()) {
+      try {
+        const recentBars = await klines(m, sym, m === 'futures' ? '15m' : '1h', 5);
+        if (!recentBars.length) continue;
+        const latestBar = recentBars.at(-1)!;
+
+        for (const pos of posList) {
+          const isLong = pos.side === 'LONG';
+          const newHighWater = isLong
+            ? Math.max(pos.high_water, latestBar.high)
+            : Math.min(pos.high_water, latestBar.low);
+          const newBarsHeld = pos.bars_held + 1;
+
+          let newState = pos.state;
+          let exitPrice = 0;
+          let reason: string | null = null;
+
+          const slHit = isLong ? latestBar.low <= pos.stop_price : latestBar.high >= pos.stop_price;
+          const tp1Hit = isLong ? latestBar.high >= pos.tp1 : latestBar.low <= pos.tp1;
+          const tp2Hit = isLong ? latestBar.high >= pos.tp2 : latestBar.low <= pos.tp2;
+          const tp3Hit = isLong ? latestBar.high >= pos.tp3 : latestBar.low <= pos.tp3;
+
+          if (slHit) {
+            newState = 'SL_HIT';
+            exitPrice = pos.stop_price;
+            reason = 'Stop-loss triggered';
+          } else if (tp3Hit) {
+            newState = 'TP3_HIT';
+            exitPrice = pos.tp3;
+            reason = 'Take profit 3 reached';
+          } else if (tp2Hit) {
+            newState = 'TP2_HIT';
+            exitPrice = pos.tp2;
+            reason = 'Take profit 2 reached';
+          } else if (tp1Hit) {
+            newState = 'TP1_HIT';
+            exitPrice = pos.tp1;
+            reason = 'Take profit 1 reached';
+          } else if (newBarsHeld >= pos.max_bars) {
+            newState = 'EXPIRED';
+            exitPrice = latestBar.close;
+            reason = 'Time horizon reached (4 hours)';
+          }
+
+          if (newState !== 'OPEN') {
+            const pnlPct = isLong
+              ? ((exitPrice - pos.entry_price) / pos.entry_price) * 100
+              : ((pos.entry_price - exitPrice) / pos.entry_price) * 100;
+            const netSimPnl = Number((pnlPct - 0.1).toFixed(2));
+
+            await transaction(sql =>
+              sql.run(
+                'UPDATE shadow_positions SET state=?, bars_held=?, high_water=?, simulated_pnl=?, closed_at=?, reason=? WHERE id=?',
+                [newState, newBarsHeld, newHighWater, netSimPnl, now, reason, pos.id]
+              )
+            );
+          } else {
+            await transaction(sql =>
+              sql.run(
+                'UPDATE shadow_positions SET bars_held=?, high_water=? WHERE id=?',
+                [newBarsHeld, newHighWater, pos.id]
+              )
+            );
+          }
+        }
+      } catch (err) {
+        console.error(`[ShadowTrade] Error checking shadow positions for ${sym}:`, err);
+      }
+    }
+  } catch (err) {
+    console.error('[ShadowTrade] Error updating shadow positions:', err);
+  }
+}
+
 export async function runAnalysis(m:Market,targetUserId?:number){
+ await updateShadowPositions(m);
  const users=await read(sql=>sql.all<{id:number}>('SELECT id FROM users WHERE '+(targetUserId?'id=?':'is_active=1'),targetUserId?[targetUserId]:[]));
  for(const u of users){
   try{
@@ -177,7 +323,23 @@ export async function runAnalysis(m:Market,targetUserId?:number){
     try{
      if((await positions(u.id)).some(p=>p.symbol===symbol))continue;
      await assertEntryEnabled(u.id,m);
-     const d=await decide(m,symbol,u.id);if(d.action==='WAIT'||d.confidence<config.min_confidence)continue;
+     const d=await decide(m,symbol,u.id);
+
+     // Shadow Position Logging for counterfactual intelligence:
+     const candidateSide = (d.action !== 'WAIT' ? d.action : d.rawAction !== 'WAIT' ? d.rawAction : null) as 'LONG' | 'SHORT' | null;
+     if (candidateSide) {
+       try {
+         const shadowPlan = computeQuantPlan(candidateSide, d.reference, d.bars.slice(-30));
+         const reason = d.action === 'WAIT'
+           ? `FILTERED_OUT (raw: ${d.rawAction} conf: ${d.rawConfidence}%)`
+           : d.confidence < config.min_confidence
+           ? `LOW_CONFIDENCE (${d.confidence}% < ${config.min_confidence}%)`
+           : `EXECUTING_LIVE`;
+         await recordShadowTrade(u.id, m, symbol, candidateSide, d.reference, shadowPlan, d.confidence || d.rawConfidence, reason);
+       } catch {}
+     }
+
+     if(d.action==='WAIT'||d.confidence<config.min_confidence)continue;
      await accountOwner(u.id,async()=>{
      await monitorAccountUnlocked(u.id);await assertEntryEnabled(u.id,m);
      if(Date.now()-d.time>15000)throw new Error('Decision expired');

@@ -601,3 +601,7 @@ Son kod mərhələsində əvvəl qeyd olunan 43 tip xətası bağlandı, wallet 
 ## Canlı hesab yoxlaması — 2026-10-05
 
 VPS və Binance GET yoxlamaları tamamlandı. Kiçik order miqdarında `Unsupported precision` yaradan decimal-grid xətası düzəldildi, 58 test/lint/TypeScript keçdi və düzəliş VPS-də build/deploy edilərək healthy statusu təsdiqləndi. Cari 100 USDT balans və ayarlarla BTC/ETH minimum order məbləğinə çatmır; digər beş yoxlanmış simvol allocation üzrə minimum həddi keçir. Telegram-da köhnə ünvana aid uğursuz bildiriş ayrıca qeyd edildi, cari chat işləyir. Sübutlar, məhdudiyyətlər və qalan native order/stop qəbulu [live-readiness-2026-10-05.md](docs/live-readiness-2026-10-05.md) faylındadır.
+
+## Qeydə alınmış qərarların əks-faktual replay-i — 2026-10-05
+
+392 Futures qərarı üçün real 1 dəqiqəlik contract/mark-price və funding məlumatı ilə LONG, SHORT və giriş etməmək müqayisəsi aparıldı. 15/60/240 dəqiqəlik müddətlər, üç sürüşmə ssenarisi və ayrıca 100 USDT/maksimum 3 mövqeli xronoloji portfel sınağı əlavə edildi. Bu, tarixi icranın dəqiq bərpası deyil: cari ayarların keçmiş qərarlara standart tətbiqidir. Məlumat və metod məhdudiyyətləri ilə birlikdə [tam hesabat](reports/counterfactual-2026-10-05/report.md), [interaktiv baxış](reports/counterfactual-2026-10-05/report.html), [CSV](reports/counterfactual-2026-10-05/decisions.csv) hazırdır. Canlı deployment və ayarlar dəyişdirilməyib.

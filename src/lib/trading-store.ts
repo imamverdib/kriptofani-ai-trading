@@ -46,6 +46,7 @@ export function initTradingStore() {
       if(!riskCols.some(c=>c.name==='futures_equity'))await sql.run('ALTER TABLE risk_state ADD COLUMN futures_equity REAL NOT NULL DEFAULT 0');
       const outboxCols=await sql.all<{name:string}>('PRAGMA table_info(notification_outbox)');
       if(!outboxCols.some(c=>c.name==='last_error'))await sql.run('ALTER TABLE notification_outbox ADD COLUMN last_error TEXT');
+      await sql.run('UPDATE futures_risk_configs SET min_confidence = 70 WHERE min_confidence = 75');
       await sql.run('COMMIT');
     } catch(e){await sql.run('ROLLBACK');throw e} finally {db.close()}
   })();
@@ -118,5 +119,28 @@ const schema=[
 `CREATE TABLE IF NOT EXISTS notification_outbox (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), chat_id TEXT, text TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0, delivered_at INTEGER)`,
 `CREATE TABLE IF NOT EXISTS telegram_links (hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), expires_at INTEGER NOT NULL)`,
 `CREATE TABLE IF NOT EXISTS telegram_identities (telegram_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL UNIQUE REFERENCES users(id))`,
-`CREATE TABLE IF NOT EXISTS telegram_updates (id INTEGER PRIMARY KEY, processed_at INTEGER NOT NULL)`
+`CREATE TABLE IF NOT EXISTS telegram_updates (id INTEGER PRIMARY KEY, processed_at INTEGER NOT NULL)`,
+`CREATE TABLE IF NOT EXISTS shadow_positions (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  market TEXT NOT NULL CHECK(market IN ('spot','futures')),
+  symbol TEXT NOT NULL,
+  side TEXT NOT NULL,
+  entry_price REAL NOT NULL,
+  stop_price REAL NOT NULL,
+  tp1 REAL NOT NULL,
+  tp2 REAL NOT NULL,
+  tp3 REAL NOT NULL,
+  confidence INTEGER NOT NULL,
+  state TEXT NOT NULL DEFAULT 'OPEN',
+  max_bars INTEGER NOT NULL DEFAULT 16,
+  bars_held INTEGER NOT NULL DEFAULT 0,
+  high_water REAL NOT NULL DEFAULT 0,
+  simulated_pnl REAL NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  closed_at INTEGER,
+  reason TEXT
+)`,
+`CREATE INDEX IF NOT EXISTS shadow_state_idx ON shadow_positions(market,state)`,
+`CREATE INDEX IF NOT EXISTS shadow_user_time ON shadow_positions(user_id,created_at)`
 ];

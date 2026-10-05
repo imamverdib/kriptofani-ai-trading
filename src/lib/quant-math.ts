@@ -1,4 +1,5 @@
 import { positive } from './trading-math';
+import { adx } from 'technicalindicators';
 export interface QuantPlan {
   entryPrice: number;
   stopLossPrice: number;
@@ -134,4 +135,74 @@ export function computeQuantPlan(
       riskRewardRatio: 2.0
     };
   }
+}
+
+export type MarketRegime = 'RANGING' | 'TRENDING' | 'STRONG_TREND';
+
+export interface MarketRegimeInfo {
+  regime: MarketRegime;
+  adx: number;
+  pdi: number;
+  mdi: number;
+  trendDirection: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+}
+
+/**
+ * Detects whether the market is in consolidation (ranging) or trending (directional momentum).
+ */
+export function detectMarketRegime(bars: KlineBar[], period = 14): MarketRegimeInfo {
+  if (!bars || bars.length < period * 2) {
+    return {
+      regime: 'RANGING',
+      adx: 15,
+      pdi: 0,
+      mdi: 0,
+      trendDirection: 'NEUTRAL'
+    };
+  }
+
+  const highs = bars.map(b => b.high);
+  const lows = bars.map(b => b.low);
+  const closes = bars.map(b => b.close);
+
+  const adxResults = adx({ high: highs, low: lows, close: closes, period });
+  const latest = adxResults.at(-1);
+
+  if (!latest || typeof latest.adx !== 'number' || !Number.isFinite(latest.adx)) {
+    return {
+      regime: 'RANGING',
+      adx: 15,
+      pdi: 0,
+      mdi: 0,
+      trendDirection: 'NEUTRAL'
+    };
+  }
+
+  const currentAdx = latest.adx;
+  const pdi = latest.pdi ?? 0;
+  const mdi = latest.mdi ?? 0;
+
+  let regime: MarketRegime = 'RANGING';
+  if (currentAdx >= 35) {
+    regime = 'STRONG_TREND';
+  } else if (currentAdx >= 22) {
+    regime = 'TRENDING';
+  } else {
+    regime = 'RANGING';
+  }
+
+  let trendDirection: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = 'NEUTRAL';
+  if (pdi > mdi + 3) {
+    trendDirection = 'BULLISH';
+  } else if (mdi > pdi + 3) {
+    trendDirection = 'BEARISH';
+  }
+
+  return {
+    regime,
+    adx: Number(currentAdx.toFixed(2)),
+    pdi: Number(pdi.toFixed(2)),
+    mdi: Number(mdi.toFixed(2)),
+    trendDirection
+  };
 }

@@ -32,11 +32,11 @@ export async function evaluateWithJev(marketState: string): Promise<TypeSafeDeci
     questions: {
       trade_action: {
         type: 'choice',
-        instructions: 'Determine the highest probability trade direction based strictly on technical indicators, trend confluence, and market structure.',
+        instructions: 'Determine the highest probability trade direction based strictly on technical indicators, trend confluence, ADX market regime, and market structure.',
         criteria: {
-          LONG: 'Clear bullish trend, RSI oversold recovery, support retest, or strong bullish momentum',
-          SHORT: 'Clear bearish trend, RSI overbought breakdown, resistance rejection, or bearish divergence',
-          WAIT: 'Choppy/rangebound market, contradictory indicators, neutral RSI (40-60), or lack of confluence'
+          LONG: 'Clear bullish trend, RSI oversold recovery, pullback continuation in strong trend (ADX>=22), support retest, or strong bullish momentum',
+          SHORT: 'Clear bearish trend, RSI overbought breakdown, pullback breakdown in strong trend (ADX>=22), resistance rejection, or bearish divergence',
+          WAIT: 'Choppy/rangebound market without clear support/resistance rejection, contradictory indicators, or lack of confluence'
         }
       },
       trend_strength: {

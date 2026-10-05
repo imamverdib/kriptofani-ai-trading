@@ -20,7 +20,8 @@
     "db:backup": "tsx scripts/database-backup.ts",
     "accounts": "tsx scripts/accounts.ts",
     "test:two-accounts:http": "node scripts/two-account-http-smoke.mjs",
-    "setup:telegram": "tsx scripts/setup-telegram-webhook.ts"
+    "setup:telegram": "tsx scripts/setup-telegram-webhook.ts",
+    "replay:counterfactual": "tsx scripts/counterfactual.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

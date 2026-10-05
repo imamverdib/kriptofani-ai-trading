@@ -31,3 +31,6 @@ next-env.d.ts
 
 # Local database snapshots
 backups/
+
+# Private, reproducible market replay inputs
+/reports/counterfactual-data/
