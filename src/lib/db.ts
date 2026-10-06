@@ -207,7 +207,7 @@ export function getDb(): sqlite3.Database {
         CREATE TABLE IF NOT EXISTS futures_risk_configs (
           user_id INTEGER PRIMARY KEY,
           max_risk_pct REAL DEFAULT 2,
-          max_open_positions INTEGER DEFAULT 3,
+          max_open_positions INTEGER DEFAULT 5,
           leverage INTEGER DEFAULT 5,
           min_confidence INTEGER DEFAULT 70,
           target_coins TEXT DEFAULT 'AUTO',

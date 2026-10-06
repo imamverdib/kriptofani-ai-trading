@@ -48,8 +48,8 @@ export function initTradingStore() {
       if(!outboxCols.some(c=>c.name==='last_error'))await sql.run('ALTER TABLE notification_outbox ADD COLUMN last_error TEXT');
       await sql.run('UPDATE futures_risk_configs SET min_confidence = 70 WHERE min_confidence = 75');
       await sql.run('UPDATE futures_risk_configs SET risk_per_trade_pct = 1.0 WHERE risk_per_trade_pct < 1.0');
-      await sql.run("UPDATE futures_risk_configs SET target_coins = 'ETHUSDT,SOLUSDT,BNBUSDT,LINKUSDT' WHERE target_coins = 'AUTO' OR target_coins IS NULL");
-      await sql.run('UPDATE futures_risk_configs SET max_open_positions = 2 WHERE max_open_positions > 2');
+      await sql.run("UPDATE futures_risk_configs SET target_coins = 'BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,LINKUSDT'");
+      await sql.run('UPDATE futures_risk_configs SET max_open_positions = 5');
       await sql.run('COMMIT');
     } catch(e){await sql.run('ROLLBACK');throw e} finally {db.close()}
   })();

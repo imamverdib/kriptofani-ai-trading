@@ -8,8 +8,8 @@ import { Zap, Wallet, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Ti
 
 
 const AVAILABLE_COINS = [
-  'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LINKUSDT',
-  'BTCUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT'
+  'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LINKUSDT',
+  'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT'
 ];
 
 export default function FuturesDashboard() {

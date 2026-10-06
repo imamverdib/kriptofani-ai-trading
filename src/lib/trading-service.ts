@@ -113,7 +113,7 @@ async function syncIncome(userId:number,c:Credentials){
 }
 async function targets(m:Market,config:{target_coins:string;blacklist_coins?:string;auto_coin_count?:number}){
  if(config.target_coins!=='AUTO'&&config.target_coins)return normalizeSymbols(config.target_coins).split(',');
- if(m==='futures')return ['ETHUSDT','SOLUSDT','BNBUSDT','LINKUSDT'];
+ if(m==='futures')return ['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','LINKUSDT'];
  const rows=await exchange<Ticker[]>(m,m==='spot'?'/api/v3/ticker/24hr':'/fapi/v1/ticker/24hr',{},undefined,'GET',{cacheMs:60000,weight:80});
  const blacklist=new Set(normalizeSymbols(config.blacklist_coins||'',false).split(','));
  return rows.filter(r=>/^[A-Z0-9]+USDT$/.test(r.symbol)&&!blacklist.has(r.symbol)&&!['USDCUSDT','FDUSDUSDT','TUSDUSDT'].includes(r.symbol)&&Number(r.quoteVolume)>50000000&&Math.abs(Number(r.priceChangePercent))<15)
