@@ -8,9 +8,8 @@ import { Zap, Wallet, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Ti
 
 
 const AVAILABLE_COINS = [
-  'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT',
-  'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT',
-  'LINKUSDT', 'MATICUSDT'
+  'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'LINKUSDT',
+  'BTCUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT'
 ];
 
 export default function FuturesDashboard() {
@@ -37,7 +36,7 @@ export default function FuturesDashboard() {
   const [leverageLoading, setLeverageLoading] = useState(false);
 
   const [maxRiskPct, setMaxRiskPct] = useState(2);
-  const [riskPerTradePct, setRiskPerTradePct] = useState(0.25);
+  const [riskPerTradePct, setRiskPerTradePct] = useState(1.0);
   const [lossRiskSaving, setLossRiskSaving] = useState(false);
   const [riskLoading, setRiskLoading] = useState(false);
 
@@ -116,7 +115,7 @@ export default function FuturesDashboard() {
         if (data.success && data.config) {
           setLeverageState(data.config.leverage || 5);
           setMaxRiskPct(data.config.max_risk_pct ?? 2);
-          setRiskPerTradePct(data.config.risk_per_trade_pct ?? 0.25);
+          setRiskPerTradePct(data.config.risk_per_trade_pct ?? 1.0);
           setMinConfidence(data.config.min_confidence ?? 80);
           setIsFuturesActive(data.config.is_futures_active === 1);
           if (data.config.target_coins) {

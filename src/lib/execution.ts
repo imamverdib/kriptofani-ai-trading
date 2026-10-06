@@ -278,10 +278,12 @@ export async function monitorPosition(p:Position,g:Gateway,currentPrice:number){
   }
   return;
  }
- // Original exchange stop is NEVER canceled for local breakeven/trailing adjustments.
+ // Stage 1 locks in +0.8R profit; Stage 2 activates 1.5% trailing stop with +0.8R floor
  if(p.stage>=1){
   const high=long?Math.max(p.high_water,currentPrice):Math.min(p.high_water||currentPrice,currentPrice);
-  const trail=p.stage>=2?(long?Math.max(p.entry_price,high*0.985):Math.min(p.entry_price,high*1.015)):p.entry_price;
+  const riskDist=Math.abs(p.entry_price-p.stop_price);
+  const lockPrice=long?p.entry_price+riskDist*0.8:p.entry_price-riskDist*0.8;
+  const trail=p.stage>=2?(long?Math.max(lockPrice,high*0.985):Math.min(lockPrice,high*1.015)):lockPrice;
   await transaction(sql=>sql.run('UPDATE managed_positions SET high_water=? WHERE id=? AND user_id=?',[high,p.id,p.user_id]));
   if(long?currentPrice<=trail:currentPrice>=trail)return exitPosition(p,g,'TRAILING');
  }

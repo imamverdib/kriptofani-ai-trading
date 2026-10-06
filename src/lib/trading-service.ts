@@ -112,7 +112,8 @@ async function syncIncome(userId:number,c:Credentials){
  if(from<=now)throw new Error('Income history requires explicit backfill');
 }
 async function targets(m:Market,config:{target_coins:string;blacklist_coins?:string;auto_coin_count?:number}){
- if(config.target_coins!=='AUTO')return normalizeSymbols(config.target_coins).split(',');
+ if(config.target_coins!=='AUTO'&&config.target_coins)return normalizeSymbols(config.target_coins).split(',');
+ if(m==='futures')return ['ETHUSDT','SOLUSDT','BNBUSDT','LINKUSDT'];
  const rows=await exchange<Ticker[]>(m,m==='spot'?'/api/v3/ticker/24hr':'/fapi/v1/ticker/24hr',{},undefined,'GET',{cacheMs:60000,weight:80});
  const blacklist=new Set(normalizeSymbols(config.blacklist_coins||'',false).split(','));
  return rows.filter(r=>/^[A-Z0-9]+USDT$/.test(r.symbol)&&!blacklist.has(r.symbol)&&!['USDCUSDT','FDUSDUSDT','TUSDUSDT'].includes(r.symbol)&&Number(r.quoteVolume)>50000000&&Math.abs(Number(r.priceChangePercent))<15)
@@ -183,9 +184,11 @@ async function decide(m:Market,symbol:string,userId:number){
 
  // 2. Dynamic Market Regime & Confluence Filter
  if (action !== 'WAIT') {
-   if (regimeInfo.regime === 'UNKNOWN') {
+   if (regimeInfo.regime === 'UNKNOWN' || (m === 'futures' && regimeInfo.adx < 25)) {
      action = 'WAIT';
-     filterReason = 'UNKNOWN_MARKET_REGIME';
+     filterReason = (m === 'futures' && regimeInfo.adx < 25)
+       ? `WEAK_TREND_ADX (${regimeInfo.adx.toFixed(1)} < 25)`
+       : 'UNKNOWN_MARKET_REGIME';
    } else {
      const isTrending = regimeInfo.regime !== 'RANGING';
      if (isTrending) {
@@ -354,7 +357,7 @@ export async function updateShadowPositions(m: Market) {
             reason = `Stop-loss triggered at ${stopPrice.toFixed(2)}`;
           }
 
-          // 2. Check TP1 (50% close & move stop to Breakeven)
+          // 2. Check TP1 (50% close & move stop to +0.8R profit lock)
           if (state === 'OPEN' && stage < 1) {
             const tp1Hit = isLong ? latestBar.high >= pos.tp1 : latestBar.low <= pos.tp1;
             if (tp1Hit) {
@@ -366,8 +369,9 @@ export async function updateShadowPositions(m: Market) {
               simPnl += netPct;
               remainingRatio -= 0.5;
               stage = 1;
-              stopPrice = pos.entry_price; // Breakeven
-              reason = 'TP1 reached (50% closed, stop moved to BE)';
+              const riskDist = Math.abs(pos.entry_price - pos.stop_price);
+              stopPrice = isLong ? pos.entry_price + riskDist * 0.8 : pos.entry_price - riskDist * 0.8;
+              reason = 'TP1 reached (50% closed, stop locked at +0.8R)';
             }
           }
 

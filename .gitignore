@@ -34,3 +34,4 @@ backups/
 
 # Private, reproducible market replay inputs
 /reports/counterfactual-data/
+/data/klines-cache/
